@@ -1,4 +1,4 @@
-"""Step 1 checkpoint: prove a graph survives a hard process kill.
+"""Prove a graph survives a hard process kill.
 
 1. Process #1 runs node_a (checkpointed) then dies inside node_b (os._exit).
 2. Process #2 resumes the same thread_id from Postgres.
