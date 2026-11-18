@@ -27,6 +27,7 @@ class DemoLLM:
         self.in_flight = 0
         self.max_in_flight = 0
         self.models_used: list[str] = []
+        self.last_messages: dict[str, list] = {}
 
     def count(self, schema_name: str) -> int:
         return self.calls.count(schema_name)
@@ -48,11 +49,15 @@ class DemoLLM:
             return sd.triage_audience() if _has(messages, "audience") and not _has(messages, "palette\":\"x") and "younger" in messages[-1]["content"] else sd.triage_brand_only()
         if name == "Wireframe":
             return sd.wireframe()
+        if name == "MemorySummary":
+            return {"summary": "The user iterated on the brand palette and approved the premium dark look.",
+                    "key_decisions": ["Premium dark green and gold palette"]}
         raise AssertionError(f"DemoLLM has no default for {name}")
 
     async def generate(self, messages, schema: type[BaseModel], *, tier, meta=None):
         name = schema.__name__
         self.calls.append(name)
+        self.last_messages[name] = messages
         if self.call_log:
             with open(self.call_log, "a") as f:
                 f.write(name + "\n")

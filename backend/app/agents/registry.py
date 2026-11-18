@@ -8,6 +8,7 @@ from app.contracts import (
     AudienceReport, BrandFeedbackTriage, BrandGuideline, CompetitorReport, ImagePlan,
     NicheReport, PlanDraft, QAReport, SEOStrategy, TriageResult, Wireframe,
 )
+from app.contracts.memory import MemorySummary
 from app.contracts.plan import AgentName, ancestors_of
 from app.contracts.site import DesignTokens, Page
 from app.agents.llm import Tier
@@ -122,6 +123,8 @@ _P = {
     "qa": "Role: QA Agent. Check consistency (brand, nav, SEO, completeness) of the provided site. passed=true only if there are no error-severity issues.",
     "triage": "Role: Manager (edit triage). Classify the user's chat message into surgical edit tasks with explicit page/section targets. "
     "If unsure (confidence < 0.6) ask a clarifying question instead of guessing.",
+    "memory": "Role: Memory Curator. Compress an ordered log of past user/brand decisions into a short summary that keeps every "
+    "still-relevant decision (final choices win over earlier ones they replaced). Drop chatter. Do not invent decisions.",
     "brand_triage": "Role: Manager (brand feedback). Decide which agents must re-run for this brand-review feedback. Prefer the smallest set; "
     "colors/fonts/tone => brand_guideline only; audience/market changes => include the relevant research agents.",
 }
@@ -139,6 +142,7 @@ for _name, _kind, _model, _tier, _prompt, _vals in [
     ("website_generation", "page", Page, "reasoning", _P["website"], ()),
     ("qa", "qa_report", QAReport, "fast", _P["qa"], ()),
     ("manager.triage_edit", "triage_result", TriageResult, "fast", _P["triage"], ()),
+    ("memory.summarize", "memory_summary", MemorySummary, "fast", _P["memory"], ()),
     ("manager.triage_brand_feedback", "brand_feedback_triage", BrandFeedbackTriage, "fast", _P["brand_triage"], ()),
 ]:
     register_agent(AgentSpec(

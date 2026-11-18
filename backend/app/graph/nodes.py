@@ -21,6 +21,38 @@ from app.store.artifacts import approve_artifact, load_for_task, load_latest, sa
 from app.store.tasks import (audit, claim_task, ensure_tasks, finish_task, set_phase, set_task_status_by_key,
                              task_attempts)
 
+def session_of(project_id: str) -> str:
+    return f"proj-{project_id}"   # == the LangGraph thread_id (see service.start_project)
+
+
+async def recall_for(conn, deps: Deps, *, pid: str, uid: str, agent: str, query: str) -> list[tuple[str, str]]:
+    """Agent-specific memory context. Memory trouble must never break the workflow."""
+    if not deps.memory:
+        return []
+    try:
+        mems = await deps.memory.for_agent(conn, project_id=pid, user_id=uid, agent=agent, query=query, session_id=session_of(pid))
+        if mems:
+            await audit(conn, pid, "manager", "memory_recalled",
+                        {"agent": agent, "topics": [m.topic_key or m.kind for m in mems], "ids": [str(m.id) for m in mems]})
+        return deps.memory.to_prompt(mems)
+    except Exception as e:  # noqa: BLE001
+        await audit(conn, pid, "system", "memory_error", {"op": "recall", "agent": agent, "error": str(e)[:300]})
+        return []
+
+
+async def remember_safely(conn, deps: Deps, pid: str, what: str, coro) -> None:
+    if not deps.memory:
+        return
+    try:
+        results = await coro
+        results = results if isinstance(results, list) else [results]
+        await audit(conn, pid, "manager", "memory_written",
+                    {"what": what, **{st: sum(1 for r in results if r and r.status == st) for st in ("created", "superseded", "duplicate")},
+                     "without_embedding": sum(1 for r in results if r and not r.embedded)})
+    except Exception as e:  # noqa: BLE001
+        await audit(conn, pid, "system", "memory_error", {"op": what, "error": str(e)[:300]})
+
+
 PHASE_FOR_AGENT = {"brand_guideline": "generating_brand", "wireframe": "wireframing"}
 
 
@@ -61,8 +93,10 @@ def make_nodes(deps: Deps):
             plan_task = Task(key="plan", agent=AgentName.MANAGER, description="Create the execution plan")
             tid = (await ensure_tasks(conn, pid, [plan_task]))["plan"]
             await claim_task(conn, tid)
+            mems = await recall_for(conn, deps, pid=pid, uid=state["user_id"], agent="manager.plan",
+                                    query=f"{state['brand_name']} {state['niche']} {state['prompt']}")
             ex = await execute_task(
-                conn, project_id=pid, task_id=tid, spec=AGENTS["manager.plan"], llm=deps.llm,
+                conn, project_id=pid, task_id=tid, spec=AGENTS["manager.plan"], llm=deps.llm, memories=mems,
                 inputs={"brand_name": state["brand_name"], "niche": state["niche"], "prompt": state["prompt"]},
                 instruction="Create the execution plan for this website project.",
                 to_artifact=lambda d: ExecutionPlan.from_draft(d), kind="execution_plan",
@@ -96,8 +130,10 @@ def make_nodes(deps: Deps):
                     prev = inputs.get("previous_brand_guideline")
                     if prev:
                         to_art = lambda out, r=prev.revision + 1: out.model_copy(update={"revision": r})  # noqa: E731
+                mems = await recall_for(conn, deps, pid=pid, uid=p["user_id"], agent=agent,
+                                        query=f"{p['niche']} {p.get('instruction', '')}")
                 ex = await execute_task(conn, project_id=pid, task_id=tid, spec=spec, llm=deps.llm, inputs=inputs,
-                                        instruction=p.get("instruction", ""), to_artifact=to_art)
+                                        memories=mems, instruction=p.get("instruction", ""), to_artifact=to_art)
             except AgentOutputError as e:  # model could not produce valid output: Manager decides what next
                 await finish_task(conn, tid, "failed", str(e)[:1000])
                 await audit(conn, pid, agent, "task_failed", {"task": key, "attempt": attempt, "error": str(e)[:500]})
@@ -144,6 +180,10 @@ def make_nodes(deps: Deps):
                 stored = await save_artifact(conn, project_id=pid, kind="research_digest", content=build_digest(arts, src))
                 await audit(conn, pid, "manager", "research_consolidated", {"digest_version": stored.version, "sources": src})
                 ids = {**ids, "research_digest": str(stored.id)}
+            await remember_safely(conn, deps, pid, "research", deps.memory.write_research(
+                conn, user_id=state["user_id"], project_id=pid, niche=arts.get("niche_report"),
+                audience=arts.get("audience_report"), competitors=arts.get("competitor_report"),
+                seo=arts.get("seo_strategy")) if deps.memory else None)
         key = "|".join(state.get("artifact_ids", {}).get(k, "") for k in RESEARCH_KINDS)
         return {"digest_for": key, "artifact_ids": {"research_digest": ids.get("research_digest", "")}}
 
@@ -203,6 +243,12 @@ def make_nodes(deps: Deps):
             if d.action == "approve":
                 await approve_artifact(conn, art.id)
                 await audit(conn, pid, "user", "brand_approved", {"artifact_id": str(art.id), "revision": art.content.revision})
+                if deps.memory:   # approved guideline => long-term brand memory (drafts never are)
+                    await remember_safely(conn, deps, pid, "brand", deps.memory.write_brand(
+                        conn, user_id=state["user_id"], project_id=pid, guideline=art.content, artifact_id=art.id))
+                    await remember_safely(conn, deps, pid, "decision", deps.memory.log_decision(
+                        conn, user_id=state["user_id"], project_id=pid,
+                        text=f"User approved brand guideline revision {art.content.revision}.", metadata={"revision": art.content.revision}))
                 await set_phase(conn, pid, "wireframing", "running")
                 return {"brand_approved": True, "phase": "wireframing"}
             await audit(conn, pid, "user", "brand_feedback", {"feedback": d.feedback, "revision": art.content.revision})
@@ -220,8 +266,9 @@ def make_nodes(deps: Deps):
             summary = {"palette": bg.palette.model_dump(), "typography": bg.typography.model_dump(),
                        "tone": bg.personality.tone_of_voice, "positioning": bg.positioning.statement}
             force = state.get("clarify_rounds", 0) >= 2
+            mems = await recall_for(conn, deps, pid=pid, uid=state["user_id"], agent="manager.triage_brand_feedback", query=feedback)
             res = await run_agent(
-                AGENTS["manager.triage_brand_feedback"], llm=deps.llm, project_id=pid,
+                AGENTS["manager.triage_brand_feedback"], llm=deps.llm, project_id=pid, memories=mems,
                 inputs={"feedback": feedback, "current_brand_summary": summary,
                         "agents_in_plan": [t.agent.value for t in plan.tasks if t.status != TaskStatus.SUPERSEDED]},
                 instruction="Decide which agents must re-run." + (" Do NOT ask further questions; decide now." if force else ""),
@@ -253,6 +300,16 @@ def make_nodes(deps: Deps):
             await save_artifact(conn, project_id=pid, kind="execution_plan", content=plan)
             await audit(conn, pid, "manager", "feedback_triaged",
                         {"affected": [a.value for a in tri.affected_agents], "rerun": mapping, "plan_version": plan.version})
+            if deps.memory:   # the user's decision becomes long-term memory (deduped; old ones get summarized)
+                short = " ".join(feedback.split())[:400]
+                await remember_safely(conn, deps, pid, "decision", deps.memory.log_decision(
+                    conn, user_id=state["user_id"], project_id=pid,
+                    text=f"User feedback on brand guideline revision {bg.revision}: \"{short}\". Manager re-ran: "
+                         f"{', '.join(sorted(a.value for a in tri.affected_agents))}.", metadata={"revision": bg.revision}))
+                try:
+                    await deps.memory.summarize_decisions(conn, deps.llm, project_id=pid, user_id=state["user_id"])
+                except Exception as e:  # noqa: BLE001
+                    await audit(conn, pid, "system", "memory_error", {"op": "summarize", "error": str(e)[:300]})
         return {"plan": dump_plan(plan), "task_ids": task_ids, "instructions": instr, "clarification": None,
                 "brand_approved": False, "phase": "generating_brand"}
 
@@ -260,6 +317,11 @@ def make_nodes(deps: Deps):
         ans = ClarificationAnswer.model_validate(interrupt({"type": "clarification", "question": state["clarification"]}))
         async with deps.conn() as conn:
             await audit(conn, state["project_id"], "user", "clarification_answer", {"answer": ans.answer})
+            if deps.memory:   # SESSION-scope: useful context for this conversation only
+                await remember_safely(conn, deps, state["project_id"], "session_note", deps.memory.remember(
+                    conn, scope="session", user_id=state["user_id"], project_id=state["project_id"],
+                    session_id=session_of(state["project_id"]), kind="clarification",
+                    content=f"Q: {state['clarification']} A: {ans.answer}"))
         return {"brand_feedback": f"{state['brand_feedback']}\nClarification: {ans.answer}",
                 "clarify_rounds": state.get("clarify_rounds", 0) + 1, "clarification": None}
 
@@ -269,6 +331,12 @@ def make_nodes(deps: Deps):
         pending = [t for t in plan.tasks if t.status == TaskStatus.PENDING]
         phase = "build_pending" if pending else "wireframe_complete"
         async with deps.conn() as conn:
+            wf = plan.active_task("wireframe")
+            if deps.memory and wf and wf.status == TaskStatus.COMPLETED:
+                art = await load_latest(conn, state["project_id"], "wireframe")
+                if art:
+                    await remember_safely(conn, deps, state["project_id"], "architecture", deps.memory.write_architecture(
+                        conn, user_id=state["user_id"], project_id=state["project_id"], wireframe=art.content, artifact_id=art.id))
             await set_phase(conn, state["project_id"], phase, "paused" if pending else "idle")
             await audit(conn, state["project_id"], "manager", "stage_finished",
                         {"phase": phase, "pending": [t.key for t in pending]})

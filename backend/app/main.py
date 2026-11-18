@@ -5,7 +5,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import CORS_ORIGINS, DATABASE_URL
+from app.api.memory import router as memory_router
 from app.api.models import router as models_router
+from app.memory.provider import EmbedderProvider
+from app.memory.service import MemoryService
 from app.graph.checkpointer import checkpointer_pool
 
 
@@ -13,6 +16,7 @@ from app.graph.checkpointer import checkpointer_pool
 async def lifespan(app: FastAPI):
     async with checkpointer_pool() as saver:
         app.state.checkpointer = saver
+        app.state.memory = MemoryService(EmbedderProvider())
         yield
 
 
@@ -22,6 +26,7 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )  # the Next.js app (port 3000) calls this API (port 8000) from the browser
 app.include_router(models_router)
+app.include_router(memory_router)
 
 
 @app.get("/health")

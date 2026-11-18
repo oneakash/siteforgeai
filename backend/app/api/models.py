@@ -52,8 +52,9 @@ async def set_override(body: OverrideIn):
         raise HTTPException(400, str(e))
     if body.agent and body.agent not in AGENTS:
         raise HTTPException(400, f"unknown agent '{body.agent}'")
-    if body.purpose == "embedding" and (body.agent or body.tier):
-        raise HTTPException(400, "embedding overrides cannot be agent/tier specific")
+    if body.purpose == "embedding" and (body.agent or body.tier or body.project_id):
+        raise HTTPException(400, "the embedding model is system-wide (one vector space): no project/agent/tier scope. "
+                                 "After switching, POST /v1/memories/reembed to rebuild stored vectors.")
     async with await psycopg.AsyncConnection.connect(DATABASE_URL, autocommit=True) as conn:
         await conn.execute(
             "INSERT INTO model_overrides (project_id, agent, tier, purpose, model_ref) VALUES (%s,%s,%s,%s,%s) "

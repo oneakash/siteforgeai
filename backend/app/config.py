@@ -9,7 +9,7 @@ SQLALCHEMY_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 
 # runtime overrides in the model_overrides table always win (switch on the go).
 DEFAULT_CHAT_REFS = {
     "reasoning": os.environ.get("LLM_REASONING", "nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b"),
-    "fast": os.environ.get("LLM_FAST", "nvidia:nvidia/nemotron-3-ultra-550b-a55b"),
+    "fast": os.environ.get("LLM_FAST", "nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b"),
 }
 # Tried in order when the chosen model fails transiently / its API key is missing.
 LLM_FALLBACKS = [r.strip() for r in os.environ.get("LLM_FALLBACKS", "").split(",") if r.strip()]
