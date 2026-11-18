@@ -53,3 +53,18 @@ Embedding switch: old vectors are ignored by search until `reembed_stale()` rebu
 - `app/graph/service.py` start_project / resume / continue_run / status  (FastAPI wraps these in Step 7)
 - `app/store/tasks.py`  task ledger, audit trail, phase
 - `app/demo/`           DemoLLM + sample payloads: the whole graph runs with no API key
+
+## Step 4: memory
+
+    docker compose restart backend          # applies migration 0003
+    docker compose exec backend pytest -q   # 81 tests
+
+- **Facts vs. logs.** A *fact* has a `topic_key` (e.g. `brand.palette`); at most ONE active version exists (DB-enforced
+  partial unique index) and a change supersedes the old row (`superseded_by` chain kept). A *log entry* (decisions) has
+  no topic and is deduplicated by hash + cosine >= 0.92. Drafts are never memory; only the APPROVED brand is.
+- **Scopes.** `user` (follows the user to new projects, `POST /v1/users/{id}/preferences`), `project`, `session` (thread).
+- **Recall.** Per-agent profile (`app/memory/profiles.py`): *pinned* topics (always, no embeddings needed) + semantic top-k
+  restricted to the active embedding model; compressed to a budget before it reaches the prompt.
+- **Embedding model is system-wide.** After switching it: `POST /v1/memories/reembed`.
+- **Never blocks the workflow.** If embeddings are down, text is stored, pinned recall still works, `reembed` repairs later.
+- Inspect: `GET /v1/projects/{id}/memories?history=true`, `GET /v1/projects/{id}/memories/search?q=...`
