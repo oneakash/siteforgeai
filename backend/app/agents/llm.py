@@ -1,4 +1,5 @@
 """StructuredLLM protocol + deterministic FakeLLM. Real providers: app/llm/router.py"""
+
 import asyncio
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -20,7 +21,11 @@ class CallMeta:
 
 class StructuredLLM(Protocol):
     async def generate(
-        self, messages: list[dict[str, str]], schema: type[BaseModel], *, tier: Tier,
+        self,
+        messages: list[dict[str, str]],
+        schema: type[BaseModel],
+        *,
+        tier: Tier,
         meta: CallMeta | None = None,
     ) -> Any:
         """Return a dict, JSON string or model instance. The RUNNER validates, so

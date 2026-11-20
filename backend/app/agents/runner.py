@@ -5,10 +5,12 @@
 Invalid output is NEVER returned to the graph. After `max_corrections` failed
 corrections we raise AgentOutputError (non-transient) for the Manager to handle.
 """
+
 import asyncio
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
@@ -83,12 +85,18 @@ async def run_agent(
             sem = [p for v in spec.validators for p in v(out, inputs)]
             if sem:
                 raise ValueError("\n".join(f"- {p}" for p in sem))
-            return AgentResult(output=out, attempts=attempt, corrections=problems_seen, model=meta.used_model)
+            return AgentResult(
+                output=out, attempts=attempt, corrections=problems_seen, model=meta.used_model
+            )
         except (ValidationError, ValueError) as exc:
             problem = format_problems(exc)
             problems_seen.append(problem)
-            shown = raw if isinstance(raw, str) else json.dumps(
-                raw.model_dump() if isinstance(raw, BaseModel) else raw, default=str
+            shown = (
+                raw
+                if isinstance(raw, str)
+                else json.dumps(
+                    raw.model_dump() if isinstance(raw, BaseModel) else raw, default=str
+                )
             )
             messages = messages + [
                 {"role": "assistant", "content": shown[:6000]},

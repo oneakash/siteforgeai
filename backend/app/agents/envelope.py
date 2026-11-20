@@ -3,8 +3,10 @@
 Typed artifacts + a few retrieved memories, wrapped in delimiters and sized to a
 budget. Never the full conversation history.
 """
+
 import json
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from pydantic import BaseModel
 

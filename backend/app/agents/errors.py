@@ -11,4 +11,6 @@ class AgentOutputError(Exception):
     def __init__(self, agent: str, problems: list[str]):
         self.agent = agent
         self.problems = problems
-        super().__init__(f"agent '{agent}' produced invalid output after {len(problems)} attempt(s): {problems[-1][:300]}")
+        super().__init__(
+            f"agent '{agent}' produced invalid output after {len(problems)} attempt(s): {problems[-1][:300]}"
+        )
