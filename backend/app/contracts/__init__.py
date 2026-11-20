@@ -23,6 +23,7 @@ ARTIFACT_MODELS: dict[str, type[Contract]] = {
     "research_digest": ResearchDigest,
     "triage_result": TriageResult,
     "brand_feedback_triage": BrandFeedbackTriage,
+    "site_document": SiteDocument, 
 }
 
 __all__ = [n for n in dir() if not n.startswith("_")]

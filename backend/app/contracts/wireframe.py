@@ -39,6 +39,7 @@ class SectionSpec(Contract):
     audience_need: Optional[ShortText] = None
     seo_keywords: list[str] = Field(default_factory=list)
     cta: Optional[CTA] = None
+    requires_visual: bool = Field(default=True, description="True for HERO, GALLERY, TEAM, TESTIMONIALS, etc.")
 
 
 class PageSpec(Contract):

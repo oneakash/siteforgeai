@@ -6,11 +6,12 @@ edits, diffing and QA possible.
 """
 import hashlib
 import json
-from typing import Any, Literal
+import urllib.parse
+from typing import Any, Literal, Optional
 
 from pydantic import Field, model_validator
 
-from .brand import ColorPalette
+from .brand import ColorPalette, Typography
 from .common import Contract, SectionId, ShortText, Slug
 from .wireframe import NavItem, SectionType
 
@@ -41,6 +42,21 @@ def hash_section(section_type: str, content: dict[str, Any]) -> str:
     return hashlib.sha256(canon.encode()).hexdigest()[:16]
 
 
+class ImagePlaceholder(Contract):
+    """Zero-cost image placeholder configuration for the renderer."""
+    width: int = Field(default=800, ge=100, le=1920)
+    height: int = Field(default=400, ge=100, le=1080)
+    bg_hex: str = Field(default="e2e8f0", pattern=r"^[0-9a-fA-F]{6}$", description="Hex without #")
+    text_hex: str = Field(default="1e293b", pattern=r"^[0-9a-fA-F]{6}$", description="Hex without #")
+    label: ShortText = Field(description="Short text to render on image, e.g., 'Hero Image'")
+
+    @property
+    def url(self) -> str:
+        """Generates the zero-cost placehold.co URL dynamically."""
+        label_encoded = urllib.parse.quote(self.label)
+        return f"https://placehold.co/{self.width}x{self.height}/{self.bg_hex}/{self.text_hex}?text={label_encoded}"
+
+
 class DesignTokens(Contract):
     colors: ColorPalette
     heading_font: str
@@ -55,6 +71,7 @@ class Section(Contract):
     section_id: SectionId
     type: SectionType
     content: dict[str, Any]
+    image_placeholder: Optional[ImagePlaceholder] = Field(default=None, description="Zero-cost visual placeholder config")
     image_prompts: list[ShortText] = Field(default_factory=list)
     content_hash: str = ""
 
@@ -63,13 +80,13 @@ class Section(Contract):
         missing = [k for k in REQUIRED_CONTENT_KEYS[self.type] if not self.content.get(k)]
         if missing:
             raise ValueError(f"section '{self.section_id}' ({self.type.value}) missing content keys {missing}")
-        self.content_hash = hash_section(self.type.value, self.content)  # always recomputed
+        self.content_hash = hash_section(self.type.value, self.content)
         return self
 
 
 class PageMeta(Contract):
-    title: str = Field(max_length=70)
-    description: str = Field(max_length=170)
+    title: str = Field(min_length=5, max_length=70)
+    description: str = Field(min_length=30, max_length=170, description="Must be a meaningful, keyword-rich SEO description.")
 
 
 class Page(Contract):
