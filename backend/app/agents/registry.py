@@ -1,17 +1,28 @@
 """Agent registry: one decorator adds an agent (extensibility seam #1)."""
+
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from pydantic import BaseModel
 
+from app.agents.llm import Tier
 from app.contracts import (
-    AudienceReport, BrandFeedbackTriage, BrandGuideline, CompetitorReport, ImagePlan,
-    NicheReport, PlanDraft, QAReport, SEOStrategy, TriageResult, Wireframe,
+    AudienceReport,
+    BrandFeedbackTriage,
+    BrandGuideline,
+    CompetitorReport,
+    ImagePlan,
+    NicheReport,
+    PlanDraft,
+    QAReport,
+    SEOStrategy,
+    TriageResult,
+    Wireframe,
 )
 from app.contracts.memory import MemorySummary
 from app.contracts.plan import AgentName, ancestors_of
 from app.contracts.site import DesignTokens, Page
-from app.agents.llm import Tier
 
 # (output, inputs) -> list of human-readable problems (empty = OK).
 # Used for CROSS-artifact checks that a single schema cannot express.
@@ -64,7 +75,10 @@ def design_matches_brand(out: DesignTokens, inputs: Mapping[str, Any]) -> list[s
     problems = []
     if out.colors != brand.palette:
         problems.append("design tokens must use the approved brand palette unchanged")
-    if (out.heading_font, out.body_font) != (brand.typography.heading_font, brand.typography.body_font):
+    if (out.heading_font, out.body_font) != (
+        brand.typography.heading_font,
+        brand.typography.body_font,
+    ):
         problems.append("design tokens must use the approved brand fonts unchanged")
     return problems
 
@@ -87,9 +101,17 @@ def plan_is_sound(out: PlanDraft, inputs: Mapping[str, Any]) -> list[str]:
     if len(brand) == 1:
         missing = research - ancestors_of(out.tasks, brand[0].key)
         if missing:
-            problems.append(f"brand_guideline must depend on all research tasks; missing {sorted(missing)}")
-    if len(brand) == 1 and len(wire) == 1 and brand[0].key not in ancestors_of(out.tasks, wire[0].key):
-        problems.append("wireframe must depend (transitively) on brand_guideline: the brand must be approved first")
+            problems.append(
+                f"brand_guideline must depend on all research tasks; missing {sorted(missing)}"
+            )
+    if (
+        len(brand) == 1
+        and len(wire) == 1
+        and brand[0].key not in ancestors_of(out.tasks, wire[0].key)
+    ):
+        problems.append(
+            "wireframe must depend (transitively) on brand_guideline: the brand must be approved first"
+        )
     return problems
 
 
@@ -102,50 +124,127 @@ COMMON_RULES = (
 )
 
 _P = {
-    "manager_plan": "Role: Manager. Turn the brand name, prompt and niche into an execution plan (a DAG of tasks). "
-    "Use agents: niche_analysis, audience_research, competitor_analysis, seo_analysis, brand_guideline, wireframe, "
-    "content, design, image, website_generation, qa. Research tasks have no dependencies on each other (parallel). "
-    "brand_guideline depends on all research. wireframe depends on brand_guideline. Later tasks depend on wireframe.",
-    "niche": "Role: Niche Analysis Agent. Analyze the industry: characteristics, trends, opportunities, challenges, typical services, terminology.",
-    "audience": "Role: Audience Research Agent. Define primary/secondary audiences, needs, pain points, motivations, booking behavior and 2-5 personas.",
-    "competitor": "Role: Competitor Agent. Identify relevant competitors and analyze positioning, site structure, features, messaging, and "
-    "differentiation. Set evidence='web_search' only for facts that came from provided search results; otherwise 'model_knowledge'.",
-    "seo": "Role: SEO Agent. Produce keyword sets with search intent, recommended landing pages (slugs start with '/'), content topics and structure advice.",
-    "brand": "Role: Brand Agent. Create a complete brand guideline grounded in the research. Colors must be #rrggbb and the text color must be "
-    "readable on the background (WCAG AA >= 4.5). If feedback is provided, change ONLY what it asks for and fill change_summary.",
-    "wireframe": "Role: Wireframe Agent. Design the sitemap, navigation and page-by-page sections. Respect the approved brand, map audience "
-    "needs to sections, include all SEO-required pages, homepage starts with a hero, every nav/CTA target must exist.",
-    "content": "Role: Content Agent. Write on-brand copy for the requested sections following the tone of voice and SEO keywords.",
-    "design": "Role: Design Agent. Produce design tokens from the approved brand. Do not alter the approved palette or fonts.",
-    "image": "Role: Image Agent. Produce an image plan: one specific generation prompt and alt text per section that needs imagery, following the brand imagery guidelines.",
-    "website": "Role: Website Generation Agent. Assemble ONE page of the Site Document from the wireframe page spec, brand and content. "
-    "Section ids must be unique kebab-case. Emit typed sections only, never HTML.",
-    "qa": "Role: QA Agent. Check consistency (brand, nav, SEO, completeness) of the provided site. passed=true only if there are no error-severity issues.",
-    "triage": "Role: Manager (edit triage). Classify the user's chat message into surgical edit tasks with explicit page/section targets. "
-    "If unsure (confidence < 0.6) ask a clarifying question instead of guessing.",
-    "memory": "Role: Memory Curator. Compress an ordered log of past user/brand decisions into a short summary that keeps every "
-    "still-relevant decision (final choices win over earlier ones they replaced). Drop chatter. Do not invent decisions.",
-    "brand_triage": "Role: Manager (brand feedback). Decide which agents must re-run for this brand-review feedback. Prefer the smallest set; "
-    "colors/fonts/tone => brand_guideline only; audience/market changes => include the relevant research agents.",
+    "manager_plan": (
+        "Role: Manager. Turn the brand name, prompt and niche into an execution plan (a DAG of tasks). "
+        "Use agents: niche_analysis, audience_research, competitor_analysis, seo_analysis, brand_guideline, "
+        "website_generation, qa. Research tasks have no dependencies on each other (parallel). "
+        "brand_guideline depends on all research. website_generation depends on brand_guideline."
+    ),
+    "niche": (
+        "Role: Niche Analysis Agent. Analyze the industry: characteristics, trends, opportunities, challenges, "
+        "typical services, terminology."
+    ),
+    "audience": (
+        "Role: Audience Research Agent. Define primary/secondary audiences, needs, pain points, motivations, "
+        "booking behavior and 2-5 personas."
+    ),
+    "competitor": (
+        "Role: Competitor Agent. Identify relevant competitors and analyze positioning, site structure, features, "
+        "messaging, and differentiation. Set evidence='web_search' only for facts from search results; otherwise 'model_knowledge'."
+    ),
+    "seo": (
+        "Role: SEO Agent. Produce keyword sets with search intent, recommended landing pages (slugs start with '/'), "
+        "content topics and structure advice."
+    ),
+    "brand": (
+        "Role: Brand Agent. Create a complete brand guideline grounded in the research. Colors must be #rrggbb and "
+        "the text color must be readable on the background (WCAG AA >= 4.5). If feedback is provided, change ONLY "
+        "what it asks for and fill change_summary."
+    ),
+    "wireframe": (
+        "Role: Wireframe Agent. Design the sitemap, navigation and page-by-page sections. Respect the approved brand, "
+        "map audience needs to sections, include all SEO-required pages, homepage starts with a hero, every nav/CTA target must exist."
+    ),
+    "content": (
+        "Role: Content Agent. Write on-brand copy for the requested sections following the tone of voice and SEO keywords."
+    ),
+    "design": (
+        "Role: Design Agent. Produce design tokens from the approved brand. Do not alter the approved palette or fonts."
+    ),
+    "image": (
+        "Role: Image Agent. Produce an image plan: one specific generation prompt and alt text per section that needs "
+        "imagery, following the brand imagery guidelines."
+    ),
+    "website": (
+        "Role: Website Generation Agent. You are generating a single Page of the Site Document. "
+        "You will be given a specific page slug, the approved Brand Guideline, and the Research Digest. "
+        "CRITICAL RULE: The 'sections' field in your output MUST be a JSON array (list) of section objects. "
+        "Never output a string, null, or a single object for 'sections'. It must be formatted as: \"sections\": [{...}, {...}] "
+        "1. Create 2-4 section objects inside the 'sections' list, appropriate for this page type (e.g., 'hero', 'features', 'testimonials'). "
+        "2. Write on-brand copy following the tone of voice and SEO keywords. "
+        "3. For visual sections, YOU MUST populate the 'image_placeholder' object with 'bg_hex', 'text_hex', and 'label'. "
+        "4. Ensure 'section_id' values are unique kebab-case strings (e.g., 'home.hero', 'about.team'). "
+        "5. Emit typed JSON only, never raw HTML."
+    ),
+    "qa": (
+        "Role: QA Agent. Check consistency (brand, nav, SEO, completeness) of the provided site. "
+        "passed=true only if there are no error-severity issues."
+    ),
+    "triage": (
+        "Role: Manager (edit triage). Classify the user's chat message into surgical edit tasks with explicit page/section targets. "
+        "If unsure (confidence < 0.6) ask a clarifying question instead of guessing."
+    ),
+    "memory": (
+        "Role: Memory Curator. Compress an ordered log of past user/brand decisions into a short summary that keeps every "
+        "still-relevant decision (final choices win over earlier ones they replaced). Drop chatter. Do not invent decisions."
+    ),
+    "brand_triage": (
+        "Role: Manager (brand feedback). Decide which agents must re-run for this brand-review feedback. Prefer the smallest set; "
+        "colors/fonts/tone => brand_guideline only; audience/market changes => include the relevant research agents."
+    ),
 }
 
 for _name, _kind, _model, _tier, _prompt, _vals in [
-    ("manager.plan", "execution_plan", PlanDraft, "reasoning", _P["manager_plan"], (plan_is_sound,)),
+    (
+        "manager.plan",
+        "execution_plan",
+        PlanDraft,
+        "reasoning",
+        _P["manager_plan"],
+        (plan_is_sound,),
+    ),
     ("niche_analysis", "niche_report", NicheReport, "fast", _P["niche"], ()),
     ("audience_research", "audience_report", AudienceReport, "fast", _P["audience"], ()),
     ("competitor_analysis", "competitor_report", CompetitorReport, "fast", _P["competitor"], ()),
     ("seo_analysis", "seo_strategy", SEOStrategy, "fast", _P["seo"], ()),
-    ("brand_guideline", "brand_guideline", BrandGuideline, "reasoning", _P["brand"], (brand_names_match,)),
-    ("wireframe", "wireframe", Wireframe, "reasoning", _P["wireframe"], (wireframe_covers_required_seo_pages,)),
+    (
+        "brand_guideline",
+        "brand_guideline",
+        BrandGuideline,
+        "reasoning",
+        _P["brand"],
+        (brand_names_match,),
+    ),
+    (
+        "wireframe",
+        "wireframe",
+        Wireframe,
+        "reasoning",
+        _P["wireframe"],
+        (wireframe_covers_required_seo_pages,),
+    ),
     ("design", "design_tokens", DesignTokens, "fast", _P["design"], (design_matches_brand,)),
     ("image", "image_plan", ImagePlan, "fast", _P["image"], ()),
     ("website_generation", "page", Page, "reasoning", _P["website"], ()),
     ("qa", "qa_report", QAReport, "fast", _P["qa"], ()),
     ("manager.triage_edit", "triage_result", TriageResult, "fast", _P["triage"], ()),
     ("memory.summarize", "memory_summary", MemorySummary, "fast", _P["memory"], ()),
-    ("manager.triage_brand_feedback", "brand_feedback_triage", BrandFeedbackTriage, "fast", _P["brand_triage"], ()),
+    (
+        "manager.triage_brand_feedback",
+        "brand_feedback_triage",
+        BrandFeedbackTriage,
+        "fast",
+        _P["brand_triage"],
+        (),
+    ),
 ]:
-    register_agent(AgentSpec(
-        name=_name, artifact_kind=_kind, output_model=_model, tier=_tier,  # type: ignore[arg-type]
-        system_prompt=f"{COMMON_RULES}\n\n{_prompt}", validators=tuple(_vals),
-    ))
+    register_agent(
+        AgentSpec(
+            name=_name,
+            artifact_kind=_kind,
+            output_model=_model,
+            tier=_tier,  # type: ignore[arg-type]
+            system_prompt=f"{COMMON_RULES}\n\n{_prompt}",
+            validators=tuple(_vals),
+        )
+    )
