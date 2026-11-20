@@ -1,4 +1,5 @@
 """Shared building blocks for every agent contract."""
+
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
@@ -12,7 +13,9 @@ class Contract(BaseModel):
 
 
 HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")]
-Slug = Annotated[str, StringConstraints(pattern=r"^(/|/[a-z0-9]+(-[a-z0-9]+)*(/[a-z0-9]+(-[a-z0-9]+)*)*)$")]
+Slug = Annotated[
+    str, StringConstraints(pattern=r"^(/|/[a-z0-9]+(-[a-z0-9]+)*(/[a-z0-9]+(-[a-z0-9]+)*)*)$")
+]
 TaskKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{1,40}$")]
 SectionId = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$", max_length=60)]
 ShortText = Annotated[str, StringConstraints(min_length=1, max_length=400)]

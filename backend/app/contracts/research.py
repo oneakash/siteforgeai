@@ -114,4 +114,6 @@ class ResearchDigest(Contract):
     differentiators: list[str] = Field(default_factory=list)
     primary_keywords: list[str] = Field(default_factory=list)
     recommended_pages: list[str] = Field(default_factory=list)
-    source_artifact_ids: dict[str, str] = Field(default_factory=dict)  # kind -> artifact id it was built from
+    source_artifact_ids: dict[str, str] = Field(
+        default_factory=dict
+    )  # kind -> artifact id it was built from

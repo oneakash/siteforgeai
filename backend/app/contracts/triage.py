@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import Optional
 
 from pydantic import Field, model_validator
 
@@ -25,7 +24,7 @@ NEEDS_TARGET = {EditIntent.CONTENT_EDIT, EditIntent.REMOVE_SECTION, EditIntent.I
 
 class EditTarget(Contract):
     page_slug: Slug
-    section_id: Optional[SectionId] = None
+    section_id: SectionId | None = None
 
 
 class EditTask(Contract):
@@ -45,7 +44,7 @@ class TriageResult(Contract):
 
     tasks: list[EditTask] = Field(default_factory=list)
     confidence: float = Field(ge=0, le=1)
-    clarifying_question: Optional[str] = None
+    clarifying_question: str | None = None
 
     @model_validator(mode="after")
     def _confidence(self):
@@ -63,16 +62,20 @@ class BrandFeedbackTriage(Contract):
     instructions: dict[str, ShortText]  # agent name -> what to change
     touches_research: bool
     confidence: float = Field(ge=0, le=1)
-    clarifying_question: Optional[str] = None
+    clarifying_question: str | None = None
 
     @model_validator(mode="after")
     def _consistent(self):
         research = {AgentName.NICHE, AgentName.AUDIENCE, AgentName.COMPETITOR, AgentName.SEO}
         if self.touches_research != bool(research & set(self.affected_agents)):
-            raise ValueError("touches_research must match whether a research agent is in affected_agents")
+            raise ValueError(
+                "touches_research must match whether a research agent is in affected_agents"
+            )
         extra = set(self.instructions) - {a.value for a in self.affected_agents}
         if extra:
-            raise ValueError(f"instructions given for agents not in affected_agents: {sorted(extra)}")
+            raise ValueError(
+                f"instructions given for agents not in affected_agents: {sorted(extra)}"
+            )
         if self.confidence < 0.6 and not self.clarifying_question:
             raise ValueError("confidence < 0.6 requires a clarifying_question")
         return self

@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import Field, model_validator
 
@@ -40,4 +40,4 @@ class ImageSpec(Contract):
 
 class ImagePlan(Contract):
     images: list[ImageSpec] = Field(min_length=1)
-    style_notes: Optional[str] = None
+    style_notes: str | None = None

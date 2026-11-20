@@ -4,14 +4,15 @@ Agents never emit HTML. They emit sections of typed content; the renderer
 turns the document into HTML. Section ids + content hashes make incremental
 edits, diffing and QA possible.
 """
+
 import hashlib
 import json
 import urllib.parse
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
-from .brand import ColorPalette, Typography
+from .brand import ColorPalette
 from .common import Contract, SectionId, ShortText, Slug
 from .wireframe import NavItem, SectionType
 
@@ -38,16 +39,21 @@ REQUIRED_CONTENT_KEYS: dict[SectionType, list[str]] = {
 
 
 def hash_section(section_type: str, content: dict[str, Any]) -> str:
-    canon = json.dumps({"type": section_type, "content": content}, sort_keys=True, separators=(",", ":"))
+    canon = json.dumps(
+        {"type": section_type, "content": content}, sort_keys=True, separators=(",", ":")
+    )
     return hashlib.sha256(canon.encode()).hexdigest()[:16]
 
 
 class ImagePlaceholder(Contract):
     """Zero-cost image placeholder configuration for the renderer."""
+
     width: int = Field(default=800, ge=100, le=1920)
     height: int = Field(default=400, ge=100, le=1080)
     bg_hex: str = Field(default="e2e8f0", pattern=r"^[0-9a-fA-F]{6}$", description="Hex without #")
-    text_hex: str = Field(default="1e293b", pattern=r"^[0-9a-fA-F]{6}$", description="Hex without #")
+    text_hex: str = Field(
+        default="1e293b", pattern=r"^[0-9a-fA-F]{6}$", description="Hex without #"
+    )
     label: ShortText = Field(description="Short text to render on image, e.g., 'Hero Image'")
 
     @property
@@ -71,7 +77,9 @@ class Section(Contract):
     section_id: SectionId
     type: SectionType
     content: dict[str, Any]
-    image_placeholder: Optional[ImagePlaceholder] = Field(default=None, description="Zero-cost visual placeholder config")
+    image_placeholder: ImagePlaceholder | None = Field(
+        default=None, description="Zero-cost visual placeholder config"
+    )
     image_prompts: list[ShortText] = Field(default_factory=list)
     content_hash: str = ""
 
@@ -79,14 +87,20 @@ class Section(Contract):
     def _check(self):
         missing = [k for k in REQUIRED_CONTENT_KEYS[self.type] if not self.content.get(k)]
         if missing:
-            raise ValueError(f"section '{self.section_id}' ({self.type.value}) missing content keys {missing}")
+            raise ValueError(
+                f"section '{self.section_id}' ({self.type.value}) missing content keys {missing}"
+            )
         self.content_hash = hash_section(self.type.value, self.content)
         return self
 
 
 class PageMeta(Contract):
     title: str = Field(min_length=5, max_length=70)
-    description: str = Field(min_length=30, max_length=170, description="Must be a meaningful, keyword-rich SEO description.")
+    description: str = Field(
+        min_length=30,
+        max_length=170,
+        description="Must be a meaningful, keyword-rich SEO description.",
+    )
 
 
 class Page(Contract):

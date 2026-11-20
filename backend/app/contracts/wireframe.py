@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import Field, model_validator
 
@@ -29,26 +29,28 @@ class SectionType(str, Enum):
 class CTA(Contract):
     label: str = Field(max_length=40)
     action: Literal["link", "form", "call", "booking", "email"]
-    target_slug: Optional[Slug] = None
+    target_slug: Slug | None = None
 
 
 class SectionSpec(Contract):
     section_type: SectionType
     purpose: ShortText
     content_requirements: list[ShortText] = Field(min_length=1)
-    audience_need: Optional[ShortText] = None
+    audience_need: ShortText | None = None
     seo_keywords: list[str] = Field(default_factory=list)
-    cta: Optional[CTA] = None
-    requires_visual: bool = Field(default=True, description="True for HERO, GALLERY, TEAM, TESTIMONIALS, etc.")
+    cta: CTA | None = None
+    requires_visual: bool = Field(
+        default=True, description="True for HERO, GALLERY, TEAM, TESTIMONIALS, etc."
+    )
 
 
 class PageSpec(Contract):
     slug: Slug
     title: ShortText
     purpose: ShortText
-    parent_slug: Optional[Slug] = None
+    parent_slug: Slug | None = None
     meta_description: str = Field(max_length=170)
-    target_keyword: Optional[str] = None
+    target_keyword: str | None = None
     sections: list[SectionSpec] = Field(min_length=2)
 
 
@@ -102,7 +104,9 @@ class Wireframe(Contract):
         for n in self.navigation:
             for item in (n, *n.children):
                 if item.slug not in known:
-                    raise ValueError(f"navigation item '{item.label}' points to missing page {item.slug}")
+                    raise ValueError(
+                        f"navigation item '{item.label}' points to missing page {item.slug}"
+                    )
         for s in self.footer_links:
             if s not in known:
                 raise ValueError(f"footer link to missing page {s}")
@@ -113,6 +117,7 @@ class Wireframe(Contract):
         for fr in self.functional_requirements:
             for s in fr.pages:
                 if s not in known:
-                    raise ValueError(f"functional requirement '{fr.name}' references missing page {s}")
+                    raise ValueError(
+                        f"functional requirement '{fr.name}' references missing page {s}"
+                    )
         return self
-

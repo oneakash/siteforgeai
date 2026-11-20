@@ -1,7 +1,7 @@
 """Manager Agent plan: a trackable DAG of tasks."""
-from enum import Enum
+
 import re
-from typing import Optional
+from enum import Enum
 
 from pydantic import Field, model_validator
 
@@ -72,7 +72,7 @@ def ancestors_of(tasks: list[TaskDraft], key: str) -> set[str]:
 class Task(TaskDraft):
     status: TaskStatus = TaskStatus.PENDING
     attempts: int = Field(default=0, ge=0)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 def _validate_dag(tasks: list[TaskDraft]) -> None:
@@ -135,7 +135,9 @@ class ExecutionPlan(Contract):
         """Pending tasks whose dependencies are all completed (safe to run
         together => the Manager fans these out in parallel)."""
         done = {t.key for t in self.tasks if t.status in (TaskStatus.COMPLETED, TaskStatus.SKIPPED)}
-        return [t for t in self.tasks if t.status == TaskStatus.PENDING and set(t.depends_on) <= done]
+        return [
+            t for t in self.tasks if t.status == TaskStatus.PENDING and set(t.depends_on) <= done
+        ]
 
     def batches(self) -> list[list[str]]:
         """Topological levels: tasks in one level can run in parallel."""
@@ -155,7 +157,7 @@ class ExecutionPlan(Contract):
             out.setdefault(lv, []).append(k)
         return [out[i] for i in sorted(out)]
 
-    def set_status(self, key: str, status: TaskStatus, error: Optional[str] = None) -> None:
+    def set_status(self, key: str, status: TaskStatus, error: str | None = None) -> None:
         t = self._by_key()[key]
         t.status = status
         t.error = error
@@ -174,14 +176,21 @@ class ExecutionPlan(Contract):
         return out
 
     # ---- revision support (user feedback => re-run only what is affected)
-    def active_task(self, agent: str) -> Optional[Task]:
-        live = [t for t in self.tasks if t.agent.value == agent and t.status != TaskStatus.SUPERSEDED]
+    def active_task(self, agent: str) -> Task | None:
+        live = [
+            t for t in self.tasks if t.agent.value == agent and t.status != TaskStatus.SUPERSEDED
+        ]
         return live[-1] if live else None
 
     def _next_key(self, key: str) -> str:
         base = re.sub(r"_r\d+$", "", key)
         n = 1 + max(
-            [int(m.group(1)) for t in self.tasks if (m := re.fullmatch(rf"{re.escape(base)}_r(\d+)", t.key))] or [1]
+            [
+                int(m.group(1))
+                for t in self.tasks
+                if (m := re.fullmatch(rf"{re.escape(base)}_r(\d+)", t.key))
+            ]
+            or [1]
         )
         return f"{base}_r{n}"
 
@@ -198,11 +207,17 @@ class ExecutionPlan(Contract):
         for k in list(keys):
             closure |= self.downstream_of(k)
         ran = (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.SKIPPED)
-        mapping = {t.key: self._next_key(t.key) for t in self.tasks if t.key in closure and t.status in ran}
+        mapping = {
+            t.key: self._next_key(t.key) for t in self.tasks if t.key in closure and t.status in ran
+        }
         clones = []
         for old, new in mapping.items():
             t = by[old]
-            clones.append(Task(key=new, agent=t.agent, description=t.description, depends_on=list(t.depends_on)))
+            clones.append(
+                Task(
+                    key=new, agent=t.agent, description=t.description, depends_on=list(t.depends_on)
+                )
+            )
             t.status = TaskStatus.SUPERSEDED
         self.tasks.extend(clones)
         for t in self.tasks:
