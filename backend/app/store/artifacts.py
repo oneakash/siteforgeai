@@ -1,4 +1,5 @@
 """Idempotent artifact persistence (psycopg async). Postgres is the source of truth."""
+
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -27,7 +28,11 @@ def _model_for(kind: str) -> type[BaseModel]:
 
 
 async def save_artifact(
-    conn: AsyncConnection, *, project_id: UUID | str, kind: str, content: BaseModel,
+    conn: AsyncConnection,
+    *,
+    project_id: UUID | str,
+    kind: str,
+    content: BaseModel,
     task_id: UUID | str | None = None,
 ) -> StoredArtifact:
     """Insert a new artifact version. If `task_id` already produced one, return
@@ -43,7 +48,12 @@ async def save_artifact(
                 ON CONFLICT DO NOTHING
                 RETURNING id, version, approved
                 """,
-                {"p": str(project_id), "t": str(task_id) if task_id else None, "k": kind, "c": payload},
+                {
+                    "p": str(project_id),
+                    "t": str(task_id) if task_id else None,
+                    "k": kind,
+                    "c": payload,
+                },
             )
         ).fetchone()
         if row:
@@ -57,7 +67,9 @@ async def save_artifact(
 
 def _row_to_artifact(row, created_now: bool = False) -> StoredArtifact:
     id_, kind, version, approved, content = row
-    return StoredArtifact(id_, kind, version, approved, _model_for(kind).model_validate(content), created_now)
+    return StoredArtifact(
+        id_, kind, version, approved, _model_for(kind).model_validate(content), created_now
+    )
 
 
 async def load_for_task(conn: AsyncConnection, task_id: UUID | str) -> StoredArtifact | None:
@@ -76,8 +88,9 @@ async def load_latest(
     row = await (
         await conn.execute(
             "SELECT id, kind, version, approved, content FROM artifacts "
-            "WHERE project_id = %s::uuid AND kind = %s " + ("AND approved " if approved_only else "") +
-            "ORDER BY version DESC LIMIT 1",
+            "WHERE project_id = %s::uuid AND kind = %s "
+            + ("AND approved " if approved_only else "")
+            + "ORDER BY version DESC LIMIT 1",
             (str(project_id), kind),
         )
     ).fetchone()
@@ -85,4 +98,6 @@ async def load_latest(
 
 
 async def approve_artifact(conn: AsyncConnection, artifact_id: UUID | str) -> None:
-    await conn.execute("UPDATE artifacts SET approved = true WHERE id = %s::uuid", (str(artifact_id),))
+    await conn.execute(
+        "UPDATE artifacts SET approved = true WHERE id = %s::uuid", (str(artifact_id),)
+    )

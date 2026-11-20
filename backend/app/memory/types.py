@@ -22,7 +22,7 @@ class Memory:
     content: str
     version: int
     metadata: dict[str, Any]
-    similarity: float | None = None   # None => pinned (fetched by topic, not by similarity)
+    similarity: float | None = None  # None => pinned (fetched by topic, not by similarity)
     is_active: bool = True
 
 

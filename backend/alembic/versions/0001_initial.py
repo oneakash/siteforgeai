@@ -3,17 +3,19 @@
 Revision ID: 0001
 Revises:
 """
+
 import sqlalchemy as sa
-from alembic import op
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects import postgresql as pg
+
+from alembic import op
 
 revision = "0001"
 down_revision = None
 branch_labels = None
 depends_on = None
 
-UUID_PK = dict(server_default=sa.text("gen_random_uuid()"), primary_key=True)
+UUID_PK = {"server_default": sa.text("gen_random_uuid()"), "primary_key": True}
 NOW = sa.text("now()")
 
 
@@ -40,7 +42,9 @@ def upgrade() -> None:
     op.create_table(
         "tasks",
         sa.Column("id", pg.UUID, **UUID_PK),
-        sa.Column("project_id", pg.UUID, sa.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "project_id", pg.UUID, sa.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("task_key", sa.Text, nullable=False),
         sa.Column("agent", sa.Text, nullable=False),
         sa.Column("status", sa.Text, nullable=False, server_default="pending"),
@@ -62,14 +66,18 @@ def upgrade() -> None:
     op.create_table(
         "artifacts",
         sa.Column("id", pg.UUID, **UUID_PK),
-        sa.Column("project_id", pg.UUID, sa.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "project_id", pg.UUID, sa.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("task_id", pg.UUID, sa.ForeignKey("tasks.id", ondelete="SET NULL"), unique=True),
         sa.Column("kind", sa.Text, nullable=False),  # niche_report, brand_guideline, wireframe...
         sa.Column("version", sa.Integer, nullable=False, server_default="1"),
         sa.Column("approved", sa.Boolean, nullable=False, server_default=sa.false()),
         sa.Column("content", pg.JSONB, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=NOW, nullable=False),
-        sa.UniqueConstraint("project_id", "kind", "version", name="uq_artifacts_project_kind_version"),
+        sa.UniqueConstraint(
+            "project_id", "kind", "version", name="uq_artifacts_project_kind_version"
+        ),
     )
 
     # Long-term memory: relational row is the source of truth; the vector is a
@@ -79,7 +87,9 @@ def upgrade() -> None:
         sa.Column("id", pg.UUID, **UUID_PK),
         sa.Column("user_id", sa.Text, nullable=False),
         sa.Column("project_id", pg.UUID, sa.ForeignKey("projects.id", ondelete="CASCADE")),
-        sa.Column("kind", sa.Text, nullable=False),  # brand_decision, audience, keyword, preference...
+        sa.Column(
+            "kind", sa.Text, nullable=False
+        ),  # brand_decision, audience, keyword, preference...
         sa.Column("content", sa.Text, nullable=False),
         sa.Column("metadata", pg.JSONB, nullable=False, server_default="{}"),
         sa.Column("embedding", Vector(1536)),
@@ -90,7 +100,9 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=NOW, nullable=False),
     )
     op.create_index(
-        "ix_memories_active_lookup", "memories", ["project_id", "kind"],
+        "ix_memories_active_lookup",
+        "memories",
+        ["project_id", "kind"],
         postgresql_where=sa.text("is_active"),
     )
     op.execute(
@@ -101,7 +113,9 @@ def upgrade() -> None:
     op.create_table(
         "site_versions",
         sa.Column("id", pg.UUID, **UUID_PK),
-        sa.Column("project_id", pg.UUID, sa.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "project_id", pg.UUID, sa.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("version", sa.Integer, nullable=False),
         sa.Column("document", pg.JSONB, nullable=False),  # the Site Document
         sa.Column("checksum", sa.Text, nullable=False),
@@ -114,7 +128,9 @@ def upgrade() -> None:
     op.create_table(
         "audit_log",
         sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
-        sa.Column("project_id", pg.UUID, sa.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "project_id", pg.UUID, sa.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("actor", sa.Text, nullable=False),  # user | manager | <agent name> | system
         sa.Column("action", sa.Text, nullable=False),
         sa.Column("payload", pg.JSONB, nullable=False, server_default="{}"),

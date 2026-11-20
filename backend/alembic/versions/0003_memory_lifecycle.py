@@ -3,6 +3,7 @@
 Revision ID: 0003
 Revises: 0002
 """
+
 from alembic import op
 
 revision = "0003"
@@ -32,13 +33,20 @@ def upgrade() -> None:
           (scope, user_id, COALESCE(project_id::text, ''), COALESCE(session_id, ''), topic_key)
           WHERE is_active AND topic_key IS NOT NULL
     """)
-    op.execute("CREATE INDEX ix_memories_topic_prefix ON memories (project_id, topic_key text_pattern_ops) WHERE is_active")
+    op.execute(
+        "CREATE INDEX ix_memories_topic_prefix ON memories (project_id, topic_key text_pattern_ops) WHERE is_active"
+    )
     op.execute("CREATE INDEX ix_memories_hash ON memories (content_hash) WHERE is_active")
     op.execute("CREATE INDEX ix_memories_metadata ON memories USING gin (metadata jsonb_path_ops)")
 
 
 def downgrade() -> None:
-    for ix in ("ix_memories_metadata", "ix_memories_hash", "ix_memories_topic_prefix", "uq_memories_active_topic"):
+    for ix in (
+        "ix_memories_metadata",
+        "ix_memories_hash",
+        "ix_memories_topic_prefix",
+        "uq_memories_active_topic",
+    ):
         op.execute(f"DROP INDEX {ix}")
     op.execute("""ALTER TABLE memories DROP CONSTRAINT ck_memories_scope_ids, DROP CONSTRAINT ck_memories_scope,
         DROP COLUMN superseded_at, DROP COLUMN source, DROP COLUMN content_hash, DROP COLUMN topic_key,

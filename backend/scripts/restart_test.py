@@ -4,6 +4,7 @@
 2. Process #2 resumes the same thread_id from Postgres.
 3. We assert node_a's side effect ran exactly once and node_b completed once.
 """
+
 import subprocess
 import sys
 import uuid

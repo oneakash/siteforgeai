@@ -4,9 +4,11 @@ Lets the whole graph run with no API key (demos, CI, crash tests). Tests inject
 `scripts` (per-schema queues of payloads / exceptions / callables) to simulate
 bad output, failures and feedback.
 """
+
 import asyncio
 import os
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -18,8 +20,14 @@ def _has(messages, needle: str) -> bool:
 
 
 class DemoLLM:
-    def __init__(self, scripts: dict[str, list[Any]] | None = None, delay: float = 0.0,
-                 call_log: str | None = None, crash_on: str | None = None, crash_marker: str | None = None):
+    def __init__(
+        self,
+        scripts: dict[str, list[Any]] | None = None,
+        delay: float = 0.0,
+        call_log: str | None = None,
+        crash_on: str | None = None,
+        crash_marker: str | None = None,
+    ):
         self.scripts = {k: list(v) for k, v in (scripts or {}).items()}
         self.delay, self.call_log = delay, call_log or os.environ.get("DEMO_LLM_CALL_LOG")
         self.crash_on, self.crash_marker = crash_on, crash_marker
@@ -44,14 +52,26 @@ class DemoLLM:
         if name == "SEOStrategy":
             return sd.seo()
         if name == "BrandGuideline":
-            return sd.brand_revised() if _has(messages, "previous_brand_guideline") else sd.brand_original()
+            return (
+                sd.brand_revised()
+                if _has(messages, "previous_brand_guideline")
+                else sd.brand_original()
+            )
         if name == "BrandFeedbackTriage":
-            return sd.triage_audience() if _has(messages, "audience") and not _has(messages, "palette\":\"x") and "younger" in messages[-1]["content"] else sd.triage_brand_only()
+            return (
+                sd.triage_audience()
+                if _has(messages, "audience")
+                and not _has(messages, 'palette":"x')
+                and "younger" in messages[-1]["content"]
+                else sd.triage_brand_only()
+            )
         if name == "Wireframe":
             return sd.wireframe()
         if name == "MemorySummary":
-            return {"summary": "The user iterated on the brand palette and approved the premium dark look.",
-                    "key_decisions": ["Premium dark green and gold palette"]}
+            return {
+                "summary": "The user iterated on the brand palette and approved the premium dark look.",
+                "key_decisions": ["Premium dark green and gold palette"],
+            }
         raise AssertionError(f"DemoLLM has no default for {name}")
 
     async def generate(self, messages, schema: type[BaseModel], *, tier, meta=None):
@@ -63,7 +83,9 @@ class DemoLLM:
                 f.write(name + "\n")
         if self.crash_on == name and self.crash_marker and not os.path.exists(self.crash_marker):
             open(self.crash_marker, "w").close()
-            await asyncio.sleep(self.delay * 4)  # let sibling agents FINISH (and commit) before the process dies
+            await asyncio.sleep(
+                self.delay * 4
+            )  # let sibling agents FINISH (and commit) before the process dies
             print(f"!! simulating hard crash inside {name}", flush=True)
             os._exit(137)
         self.in_flight += 1

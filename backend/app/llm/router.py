@@ -7,16 +7,23 @@ The model is resolved on EVERY call (override table -> env default), and is neve
 stored in graph state, so a switch takes effect on the next LLM call - even for a
 workflow that is paused, resumed, or recovered after a crash.
 """
+
 import os
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Iterable, Literal, Mapping, Sequence
+from typing import Any, Literal
 
 import psycopg
 from pydantic import BaseModel
 
 from app.agents.errors import TransientAgentError
 from app.agents.llm import CallMeta, Tier
-from app.config import DATABASE_URL, DEFAULT_CHAT_REFS, DEFAULT_EMBEDDING_REF, LLM_FALLBACKS, LLM_TIMEOUT_S
+from app.config import (
+    DATABASE_URL,
+    DEFAULT_CHAT_REFS,
+    LLM_FALLBACKS,
+    LLM_TIMEOUT_S,
+)
 
 
 class ProviderConfigError(Exception):
@@ -50,10 +57,17 @@ class ProviderSpec:
 
 
 PROVIDERS: dict[str, ProviderSpec] = {
-    "openai": ProviderSpec("OPENAI_API_KEY", embeddings=True),  # optional; not used by default  # OPTIONAL: nothing defaults to it
+    "openai": ProviderSpec(
+        "OPENAI_API_KEY", embeddings=True
+    ),  # optional; not used by default  # OPTIONAL: nothing defaults to it
     # NVIDIA's hosted endpoint is OpenAI-compatible. NVIDIA recommends temperature 1.0 / top_p 0.95
     # for Nemotron 3 Super (documented for 3.0; we assume the same for 3.5 - tune if needed).
-    "nvidia": ProviderSpec("NVIDIA_API_KEY", base_url="https://integrate.api.nvidia.com/v1", temperature=1.0, top_p=0.95),
+    "nvidia": ProviderSpec(
+        "NVIDIA_API_KEY",
+        base_url="https://integrate.api.nvidia.com/v1",
+        temperature=1.0,
+        top_p=0.95,
+    ),
     "groq": ProviderSpec("GROQ_API_KEY"),
     "google": ProviderSpec("GOOGLE_API_KEY", embeddings=True),
 }
@@ -80,7 +94,13 @@ def build_chat_model(ref: ModelRef, timeout: float = LLM_TIMEOUT_S):
         # langchain-openai is just an OpenAI-compatible HTTP client; NVIDIA's endpoint needs NO OpenAI account.
         from langchain_openai import ChatOpenAI
 
-        kw: dict[str, Any] = dict(model=ref.model, api_key=key, temperature=spec.temperature, timeout=timeout, max_retries=0)
+        kw: dict[str, Any] = {
+            "model": ref.model,
+            "api_key": key,
+            "temperature": spec.temperature,
+            "timeout": timeout,
+            "max_retries": 0,
+        }
         if spec.base_url:
             kw["base_url"] = spec.base_url
         if spec.top_p is not None:
@@ -89,16 +109,37 @@ def build_chat_model(ref: ModelRef, timeout: float = LLM_TIMEOUT_S):
     if ref.provider == "groq":
         from langchain_groq import ChatGroq
 
-        return ChatGroq(model=ref.model, api_key=key, temperature=spec.temperature, timeout=timeout, max_retries=0)
+        return ChatGroq(
+            model=ref.model,
+            api_key=key,
+            temperature=spec.temperature,
+            timeout=timeout,
+            max_retries=0,
+        )
     if ref.provider == "google":
         from langchain_google_genai import ChatGoogleGenerativeAI
 
-        return ChatGoogleGenerativeAI(model=ref.model, google_api_key=key, temperature=spec.temperature, timeout=timeout, max_retries=0)
+        return ChatGoogleGenerativeAI(
+            model=ref.model,
+            google_api_key=key,
+            temperature=spec.temperature,
+            timeout=timeout,
+            max_retries=0,
+        )
     raise ProviderConfigError(f"provider '{ref.provider}' has no chat adapter")
 
 
-_TRANSIENT_NAMES = ("Timeout", "RateLimit", "APIConnection", "InternalServer", "ServiceUnavailable",
-                    "ResourceExhausted", "DeadlineExceeded", "TooManyRequests", "BadGateway")
+_TRANSIENT_NAMES = (
+    "Timeout",
+    "RateLimit",
+    "APIConnection",
+    "InternalServer",
+    "ServiceUnavailable",
+    "ResourceExhausted",
+    "DeadlineExceeded",
+    "TooManyRequests",
+    "BadGateway",
+)
 
 
 def is_transient(e: Exception) -> bool:
@@ -119,7 +160,11 @@ class OverrideRow:
 
 
 def pick_override(
-    rows: Iterable[OverrideRow], *, project_id: str | None, agent: str | None, tier: str | None,
+    rows: Iterable[OverrideRow],
+    *,
+    project_id: str | None,
+    agent: str | None,
+    tier: str | None,
     purpose: Literal["chat", "embedding"],
 ) -> str | None:
     """Most specific matching row wins. Project scope beats global; within a
@@ -155,7 +200,9 @@ class ModelRouter:
 
     def __init__(
         self,
-        fetch_overrides: Callable[[str | None], Awaitable[Sequence[OverrideRow]]] = fetch_overrides_pg,
+        fetch_overrides: Callable[
+            [str | None], Awaitable[Sequence[OverrideRow]]
+        ] = fetch_overrides_pg,
         fallbacks: Sequence[str] | None = None,
         chat_factory: Callable[[ModelRef], Any] = build_chat_model,
         defaults: Mapping[str, str] | None = None,
@@ -169,7 +216,10 @@ class ModelRouter:
     async def chain_for(self, *, agent: str | None, tier: Tier, project_id) -> list[ModelRef]:
         pid = str(project_id) if project_id else None
         rows = await self._fetch(pid)
-        primary = pick_override(rows, project_id=pid, agent=agent, tier=tier, purpose="chat") or self._defaults[tier]
+        primary = (
+            pick_override(rows, project_id=pid, agent=agent, tier=tier, purpose="chat")
+            or self._defaults[tier]
+        )
         refs: list[ModelRef] = []
         for text in [primary, *self._fallbacks]:
             ref = ModelRef.parse(text)
@@ -186,8 +236,11 @@ class ModelRouter:
         return self._runnables[key]
 
     async def generate(self, messages, schema, *, tier, meta: CallMeta | None = None):
-        chain = await self.chain_for(agent=meta.agent if meta else None, tier=tier,
-                                     project_id=meta.project_id if meta else None)
+        chain = await self.chain_for(
+            agent=meta.agent if meta else None,
+            tier=tier,
+            project_id=meta.project_id if meta else None,
+        )
         last: Exception | None = None
         for ref in chain:
             try:

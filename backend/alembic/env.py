@@ -1,6 +1,6 @@
-from alembic import context
 from sqlalchemy import create_engine
 
+from alembic import context
 from app.config import SQLALCHEMY_URL
 
 config = context.config

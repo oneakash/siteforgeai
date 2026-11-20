@@ -1,14 +1,16 @@
 """Embedding providers. Dimension is pinned to the DB column (1536)."""
+
 import math
 import os
-from typing import Protocol, Sequence
+from collections.abc import Sequence
+from typing import Protocol
 
 from app.config import EMBEDDING_DIM
-from app.llm.router import ModelRef, ProviderConfigError, PROVIDERS
+from app.llm.router import PROVIDERS, ModelRef, ProviderConfigError
 
 
 class Embedder(Protocol):
-    ref: str          # 'provider:model' - stored in memories.embedding_model
+    ref: str  # 'provider:model' - stored in memories.embedding_model
     dim: int
 
     async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
@@ -25,7 +27,9 @@ def normalize(v: Sequence[float]) -> list[float]:
 def _check(vecs: Sequence[Sequence[float]], ref: str) -> list[list[float]]:
     for v in vecs:
         if len(v) != EMBEDDING_DIM:
-            raise ValueError(f"{ref} returned {len(v)} dims; the memories column is vector({EMBEDDING_DIM})")
+            raise ValueError(
+                f"{ref} returned {len(v)} dims; the memories column is vector({EMBEDDING_DIM})"
+            )
     return [normalize(v) for v in vecs]
 
 
@@ -41,11 +45,17 @@ class LangChainEmbedder:
         if ref.provider == "openai":
             from langchain_openai import OpenAIEmbeddings
 
-            self._doc = self._query = OpenAIEmbeddings(model=ref.model, api_key=key, dimensions=EMBEDDING_DIM)
+            self._doc = self._query = OpenAIEmbeddings(
+                model=ref.model, api_key=key, dimensions=EMBEDDING_DIM
+            )
         else:  # google
             from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-            kw = dict(model=ref.model, google_api_key=key, output_dimensionality=EMBEDDING_DIM)
+            kw = {
+                "model": ref.model,
+                "google_api_key": key,
+                "output_dimensionality": EMBEDDING_DIM,
+            }
             self._doc = GoogleGenerativeAIEmbeddings(task_type="RETRIEVAL_DOCUMENT", **kw)
             self._query = GoogleGenerativeAIEmbeddings(task_type="RETRIEVAL_QUERY", **kw)
 
