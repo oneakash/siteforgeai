@@ -5,6 +5,7 @@
 Every node writes a row to audit_log so we can later prove how many times
 each node's side effects actually ran.
 """
+
 import argparse
 import asyncio
 import os

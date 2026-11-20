@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Literal, Optional, TypedDict
+from typing import Annotated, Literal, TypedDict
 
 from pydantic import model_validator
 
@@ -21,17 +21,18 @@ class RootState(TypedDict, total=False):
     plan: dict
     task_ids: Annotated[dict[str, str], merge_dicts]
     instructions: Annotated[dict[str, str], merge_dicts]
-    artifact_ids: Annotated[dict[str, str], merge_dicts]   # kind -> latest artifact id
+    artifact_ids: Annotated[dict[str, str], merge_dicts]  # kind -> latest artifact id
     task_results: Annotated[dict[str, dict], merge_dicts]
-    specs: list[dict]                                      # (subgraph plumbing)
+    specs: list[dict]  # (subgraph plumbing)
     # workflow flags
     phase: str
     digest_for: str
     brand_approved: bool
     brand_feedback: str
     review_decision: dict
-    clarification: Optional[str]
+    clarification: str | None
     clarify_rounds: int
+    site_document_id: str
 
 
 class WorkerPayload(TypedDict, total=False):
