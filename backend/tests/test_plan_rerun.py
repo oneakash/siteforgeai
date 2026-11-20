@@ -27,11 +27,18 @@ def test_rerun_research_cascades_to_brand_but_not_other_research():
     assert set(m) == {"audience", "brand"} and m["audience"] == "audience_r2"
     live = {t.key for t in p.tasks if t.status != TaskStatus.SUPERSEDED}
     assert live == {"niche", "competitors", "seo", "audience_r2", "brand_r2", "wireframe"}
-    assert [t.key for t in p.ready_tasks()] == ["audience_r2"]       # brand_r2 waits for it
-    assert set(next(t for t in p.tasks if t.key == "brand_r2").depends_on) == {"niche", "audience_r2", "competitors", "seo"}
+    assert [t.key for t in p.ready_tasks()] == ["audience_r2"]  # brand_r2 waits for it
+    assert set(next(t for t in p.tasks if t.key == "brand_r2").depends_on) == {
+        "niche",
+        "audience_r2",
+        "competitors",
+        "seo",
+    }
 
 
 def test_second_revision_increments_suffix_and_active_task_follows():
-    p = done_plan(); p.rerun({"brand"}); p.set_status("brand_r2", TaskStatus.COMPLETED)
+    p = done_plan()
+    p.rerun({"brand"})
+    p.set_status("brand_r2", TaskStatus.COMPLETED)
     assert p.rerun({"brand_r2"}) == {"brand_r2": "brand_r3"}
     assert p.active_task("brand_guideline").key == "brand_r3"

@@ -21,12 +21,15 @@ async def test_valid_first_try():
 
 
 async def test_corrective_reprompt_then_success_and_error_is_fed_back():
-    bad = sd.brand(); bad["palette"]["text"] = "#16251F"
+    bad = sd.brand()
+    bad["palette"]["text"] = "#16251F"
     llm = FakeLLM([bad, sd.brand()])
     res = await run_agent(BRAND, llm=llm, inputs={"brand_name": "Aurum Escapes"})
     assert res.attempts == 2 and "contrast" in res.corrections[0]
     second_call = llm.calls[1]
-    assert second_call[-1]["role"] == "user" and "contrast" in second_call[-1]["content"]  # error shown to model
+    assert (
+        second_call[-1]["role"] == "user" and "contrast" in second_call[-1]["content"]
+    )  # error shown to model
     assert second_call[-2]["role"] == "assistant"
 
 
@@ -44,8 +47,9 @@ async def test_accepts_json_string_and_fenced_json():
 
 
 async def test_semantic_validator_cross_artifact_wireframe_must_cover_seo_pages():
-    seo = SEOStrategy.model_validate(sd.seo())            # requires /destinations
-    w = sd.wireframe(); w["pages"] = [p for p in w["pages"] if p["slug"] != "/destinations"]
+    seo = SEOStrategy.model_validate(sd.seo())  # requires /destinations
+    w = sd.wireframe()
+    w["pages"] = [p for p in w["pages"] if p["slug"] != "/destinations"]
     w["navigation"] = [n for n in w["navigation"] if n["slug"] != "/destinations"]
     llm = FakeLLM([w, sd.wireframe()])
     res = await run_agent(WIRE, llm=llm, inputs={"seo_strategy": seo})
@@ -54,8 +58,11 @@ async def test_semantic_validator_cross_artifact_wireframe_must_cover_seo_pages(
 
 
 async def test_brand_name_mismatch_is_caught():
-    b = sd.brand(); b["brand_name"] = "Wrong Name"
-    res = await run_agent(BRAND, llm=FakeLLM([b, sd.brand()]), inputs={"brand_name": "Aurum Escapes"})
+    b = sd.brand()
+    b["brand_name"] = "Wrong Name"
+    res = await run_agent(
+        BRAND, llm=FakeLLM([b, sd.brand()]), inputs={"brand_name": "Aurum Escapes"}
+    )
     assert res.attempts == 2
 
 
@@ -72,11 +79,11 @@ def test_envelope_wraps_neutralizes_and_respects_budget():
         budget_chars=2000,
     )
     assert env.startswith("<context>") and env.endswith("</context>")
-    assert "keep me" in env                      # small block untouched
-    assert "…[truncated]" in env                 # big block shrunk
-    assert env.count("</artifact>") == 3         # only OUR closers; injected one was neutralized
+    assert "keep me" in env  # small block untouched
+    assert "…[truncated]" in env  # big block shrunk
+    assert env.count("</artifact>") == 3  # only OUR closers; injected one was neutralized
     assert "</memory>" in env and env.count("</memory>") == 1
-    assert len(env) < 2000 + 400                 # budget (+ fixed tag overhead)
+    assert len(env) < 2000 + 400  # budget (+ fixed tag overhead)
 
 
 def test_agents_never_get_chat_history_only_declared_inputs():

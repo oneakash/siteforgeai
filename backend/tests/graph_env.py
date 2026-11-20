@@ -1,20 +1,25 @@
 import contextlib
 
 import psycopg
-import pytest
+from langgraph.types import RetryPolicy
 
+from app.agents.errors import TransientAgentError
 from app.config import DATABASE_URL
 from app.demo.demo_embedder import DemoEmbedder
 from app.demo.demo_llm import DemoLLM
-from app.memory.provider import StaticEmbedderProvider
-from app.memory.service import MemoryService
 from app.graph.checkpointer import checkpointer_pool
 from app.graph.deps import Deps
 from app.graph.root import build_root_graph
-from langgraph.types import RetryPolicy
-from app.agents.errors import TransientAgentError
+from app.memory.provider import StaticEmbedderProvider
+from app.memory.service import MemoryService
 
-FAST_RETRY = RetryPolicy(max_attempts=3, initial_interval=0.01, backoff_factor=1.0, jitter=False, retry_on=TransientAgentError)
+FAST_RETRY = RetryPolicy(
+    max_attempts=3,
+    initial_interval=0.01,
+    backoff_factor=1.0,
+    jitter=False,
+    retry_on=TransientAgentError,
+)
 
 
 @contextlib.asynccontextmanager
