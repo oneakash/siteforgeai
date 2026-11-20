@@ -13,7 +13,7 @@ DEFAULT_CHAT_REFS = {
 }
 # Tried in order when the chosen model fails transiently / its API key is missing.
 LLM_FALLBACKS = [r.strip() for r in os.environ.get("LLM_FALLBACKS", "").split(",") if r.strip()]
-LLM_TIMEOUT_S = float(os.environ.get("LLM_TIMEOUT_S", "90"))
+LLM_TIMEOUT_S = float(os.environ.get("LLM_TIMEOUT_S", "300"))
 
 # ---- Embeddings. Dimension is FIXED by the DB column (vector(1536)); every
 # embedder must emit exactly this many dims (Gemini/OpenAI both support it).
@@ -21,5 +21,10 @@ EMBEDDING_DIM = 1536
 DEFAULT_EMBEDDING_REF = os.environ.get("EMBEDDING_MODEL", "google:gemini-embedding-2")
 
 # Browser origins allowed to call the API (comma-separated). Add your deployed frontend URL here.
-CORS_ORIGINS = [o.strip() for o in os.environ.get(
-    "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",") if o.strip()]
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(
+        ","
+    )
+    if o.strip()
+]
