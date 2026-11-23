@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: #fafafa; /* Slightly off-white for depth */
+    --foreground: #0f172a;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: #020617; /* Deep slate for modern dark mode */
+      --foreground: #f8fafc;
+    }
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+  }
+}
