@@ -4,6 +4,22 @@
     docker compose up --build        # db + backend (auto-migrates) + frontend + renderer
     make restart-test                # crash a graph mid-run, resume in a new process
 
+# Ensure your database is running (you can still use docker compose just for the DB)
+docker compose up db redis -d
+docker compose up --build -d db redis arq_worker
+
+# Run the backend with auto-reload
+cd backend
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Run the renderer
+cd renderer
+BACKEND_URL=http://localhost:8000 node server.js
+
+# Run frontend
+cd frontend
+npm run dev
+
 | Service  | URL                             |
 |----------|---------------------------------|
 | Frontend | http://localhost:3000           |
