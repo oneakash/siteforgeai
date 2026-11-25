@@ -25,10 +25,8 @@ from app.config import (
     LLM_TIMEOUT_S,
 )
 
-
 class ProviderConfigError(Exception):
     """Bad ref or missing API key. Router skips to the next fallback."""
-
 
 @dataclass(frozen=True)
 class ModelRef:
@@ -45,7 +43,6 @@ class ModelRef:
     def __str__(self) -> str:
         return f"{self.provider}:{self.model}"
 
-
 @dataclass(frozen=True)
 class ProviderSpec:
     env_key: str
@@ -54,7 +51,6 @@ class ProviderSpec:
     top_p: float | None = None
     chat: bool = True
     embeddings: bool = False
-
 
 PROVIDERS: dict[str, ProviderSpec] = {
     "openai": ProviderSpec(
@@ -72,17 +68,14 @@ PROVIDERS: dict[str, ProviderSpec] = {
     "google": ProviderSpec("GOOGLE_API_KEY", embeddings=True),
 }
 
-
 def _spec(ref: ModelRef) -> ProviderSpec:
     spec = PROVIDERS.get(ref.provider)
     if not spec:
         raise ProviderConfigError(f"unknown provider '{ref.provider}' (known: {sorted(PROVIDERS)})")
     return spec
 
-
 def provider_ready(ref: ModelRef) -> bool:
     return bool(os.environ.get(_spec(ref).env_key))
-
 
 def build_chat_model(ref: ModelRef, timeout: float = LLM_TIMEOUT_S):
     spec = _spec(ref)
@@ -128,7 +121,6 @@ def build_chat_model(ref: ModelRef, timeout: float = LLM_TIMEOUT_S):
         )
     raise ProviderConfigError(f"provider '{ref.provider}' has no chat adapter")
 
-
 _TRANSIENT_NAMES = (
     "Timeout",
     "RateLimit",
@@ -141,13 +133,11 @@ _TRANSIENT_NAMES = (
     "BadGateway",
 )
 
-
 def is_transient(e: Exception) -> bool:
     if any(k in type(e).__name__ for k in _TRANSIENT_NAMES):
         return True
     code = getattr(e, "status_code", None) or getattr(e, "code", None)
     return code in (408, 429, 500, 502, 503, 504)
-
 
 # ---------------------------------------------------------------- resolution
 @dataclass(frozen=True)
@@ -157,7 +147,6 @@ class OverrideRow:
     tier: str | None
     purpose: str  # 'chat' | 'embedding'
     model_ref: str
-
 
 def pick_override(
     rows: Iterable[OverrideRow],
@@ -184,7 +173,6 @@ def pick_override(
             best = (score, r.model_ref)
     return best[1] if best else None
 
-
 async def fetch_overrides_pg(project_id: str | None) -> list[OverrideRow]:
     async with await psycopg.AsyncConnection.connect(DATABASE_URL, autocommit=True) as conn:
         cur = await conn.execute(
@@ -193,7 +181,6 @@ async def fetch_overrides_pg(project_id: str | None) -> list[OverrideRow]:
             (project_id,),
         )
         return [OverrideRow(*row) for row in await cur.fetchall()]
-
 
 class ModelRouter:
     """Implements StructuredLLM. Resolves the model per call, with failover."""
@@ -234,6 +221,32 @@ class ModelRouter:
                 schema, method="function_calling", include_raw=True
             )
         return self._runnables[key]
+
+    async def chat_with_tools(self, messages, tools, *, tier, meta: CallMeta | None = None):
+        """One assistant turn with tools bound (OpenAI-format schemas). Returns the AIMessage;
+        the caller owns the loop. Same resolution + failover rules as generate()."""
+        chain = await self.chain_for(
+            agent=meta.agent if meta else None,
+            tier=tier,
+            project_id=meta.project_id if meta else None,
+        )
+        last: Exception | None = None
+        for ref in chain:
+            try:
+                ai = await self._factory(ref).bind_tools(tools).ainvoke(messages)
+            except ProviderConfigError as e:
+                last = e
+                continue
+            except Exception as e:
+                if is_transient(e):
+                    last = TransientAgentError(f"{ref}: {type(e).__name__}: {e}")
+                    continue
+                raise
+            if meta:
+                meta.used_model = str(ref)
+            return ai
+        assert last is not None
+        raise last
 
     async def generate(self, messages, schema, *, tier, meta: CallMeta | None = None):
         chain = await self.chain_for(
