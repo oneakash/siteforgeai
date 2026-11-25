@@ -50,5 +50,33 @@ services:
       - ./renderer:/app
       - /app/node_modules
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  arq_worker:
+    build: ./backend
+    command: uv run arq app.worker.WorkerSettings
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-siteforge}:${POSTGRES_PASSWORD:-siteforge}@db:5432/${POSTGRES_DB:-siteforge}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
 volumes:
   pgdata:
+  redis_data:
