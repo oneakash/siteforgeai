@@ -23,11 +23,11 @@ from app.contracts import (
 from app.contracts.memory import MemorySummary
 from app.contracts.plan import AgentName, ancestors_of
 from app.contracts.site import DesignTokens, Page
+from app.tools.web_search import host_of
 
 # (output, inputs) -> list of human-readable problems (empty = OK).
 # Used for CROSS-artifact checks that a single schema cannot express.
 SemanticValidator = Callable[[Any, Mapping[str, Any]], list[str]]
-
 
 @dataclass(frozen=True)
 class AgentSpec:
@@ -38,17 +38,18 @@ class AgentSpec:
     tier: Tier = "fast"
     validators: tuple[SemanticValidator, ...] = field(default_factory=tuple)
     context_budget_chars: int = 24_000
-
+    # Tool use (research phase before the structured answer). Empty => single-shot agent.
+    tools: tuple[str, ...] = ()
+    max_tool_calls: int = 3  # total search queries per task (free-tier friendly)
+    research_brief: str = ""
 
 AGENTS: dict[str, AgentSpec] = {}
-
 
 def register_agent(spec: AgentSpec) -> AgentSpec:
     if spec.name in AGENTS:
         raise ValueError(f"agent '{spec.name}' already registered")
     AGENTS[spec.name] = spec
     return spec
-
 
 # ---------------- cross-artifact validators ----------------
 def wireframe_covers_required_seo_pages(out: Wireframe, inputs: Mapping[str, Any]) -> list[str]:
@@ -59,13 +60,11 @@ def wireframe_covers_required_seo_pages(out: Wireframe, inputs: Mapping[str, Any
     missing = [p.slug for p in seo.recommended_pages if p.required and p.slug not in have]
     return [f"wireframe is missing SEO-required pages: {missing}"] if missing else []
 
-
 def brand_names_match(out: BrandGuideline, inputs: Mapping[str, Any]) -> list[str]:
     expected = inputs.get("brand_name")
     if isinstance(expected, str) and out.brand_name.strip().lower() != expected.strip().lower():
         return [f"brand_name must be exactly '{expected}', got '{out.brand_name}'"]
     return []
-
 
 def design_matches_brand(out: DesignTokens, inputs: Mapping[str, Any]) -> list[str]:
     """Design tokens must keep the APPROVED palette and fonts (brand consistency)."""
@@ -82,9 +81,28 @@ def design_matches_brand(out: DesignTokens, inputs: Mapping[str, Any]) -> list[s
         problems.append("design tokens must use the approved brand fonts unchanged")
     return problems
 
+def competitors_are_grounded(out: CompetitorReport, inputs: Mapping[str, Any]) -> list[str]:
+    """`evidence='web_search'` must be earned: the competitor's site has to appear in the
+    search results this run actually retrieved."""
+    research = inputs.get("web_research")
+    hosts = {
+        host_of(s["url"])
+        for s in (research.get("sources", []) if isinstance(research, Mapping) else [])
+        if s.get("url")
+    }
+    problems = []
+    for c in out.competitors:
+        if c.evidence != "web_search":
+            continue
+        if not c.url or host_of(c.url) not in hosts:
+            problems.append(
+                f"competitor '{c.name}' is marked evidence='web_search' but its URL is not in "
+                "<artifact name=\"web_research\">; use a URL from those sources or set "
+                "evidence='model_knowledge'"
+            )
+    return problems
 
 RESEARCH_AGENTS = {AgentName.NICHE, AgentName.AUDIENCE, AgentName.COMPETITOR, AgentName.SEO}
-
 
 def plan_is_sound(out: PlanDraft, inputs: Mapping[str, Any]) -> list[str]:
     """Orchestration invariants the Manager must respect (not just a valid DAG)."""
@@ -114,7 +132,6 @@ def plan_is_sound(out: PlanDraft, inputs: Mapping[str, Any]) -> list[str]:
         )
     return problems
 
-
 COMMON_RULES = (
     "You are a specialist agent inside a multi-agent website builder. "
     "Respond ONLY with the structured output requested. "
@@ -140,7 +157,9 @@ _P = {
     ),
     "competitor": (
         "Role: Competitor Agent. Identify relevant competitors and analyze positioning, site structure, features, "
-        "messaging, and differentiation. Set evidence='web_search' only for facts from search results; otherwise 'model_knowledge'."
+        "messaging, and differentiation. Prefer real competitors found in <artifact name=\"web_research\"> "
+        "and use their exact URLs with evidence='web_search'. Anything not supported by those sources "
+        "(or when web_research has no sources) must be evidence='model_knowledge' with url null."
     ),
     "seo": (
         "Role: SEO Agent. Produce keyword sets with search intent, recommended landing pages (slugs start with '/'), "
@@ -194,6 +213,32 @@ _P = {
     ),
 }
 
+# agent -> (tools, max searches, what to research). Only agents whose output benefits from
+# live facts get tools; brand/wireframe/website/qa work purely from upstream artifacts.
+_TOOLING: dict[str, tuple[tuple[str, ...], int, str]] = {
+    "competitor_analysis": (
+        ("web_search",),
+        5,
+        "Find 4-6 real direct competitors for this business/niche/location and what their sites "
+        "offer (structure, features, messaging).",
+    ),
+    "niche_analysis": (
+        ("web_search",),
+        2,
+        "Find current market trends and typical services/terminology for this niche.",
+    ),
+    "seo_analysis": (
+        ("web_search",),
+        3,
+        "Find what keywords/pages competitors rank for and the search intent around this niche.",
+    ),
+    "audience_research": (
+        ("web_search",),
+        2,
+        "Find current data on who buys this and how they research/book.",
+    ),
+}
+
 for _name, _kind, _model, _tier, _prompt, _vals in [
     (
         "manager.plan",
@@ -205,7 +250,14 @@ for _name, _kind, _model, _tier, _prompt, _vals in [
     ),
     ("niche_analysis", "niche_report", NicheReport, "fast", _P["niche"], ()),
     ("audience_research", "audience_report", AudienceReport, "fast", _P["audience"], ()),
-    ("competitor_analysis", "competitor_report", CompetitorReport, "fast", _P["competitor"], ()),
+    (
+        "competitor_analysis",
+        "competitor_report",
+        CompetitorReport,
+        "fast",
+        _P["competitor"],
+        (competitors_are_grounded,),
+    ),
     ("seo_analysis", "seo_strategy", SEOStrategy, "fast", _P["seo"], ()),
     (
         "brand_guideline",
@@ -238,6 +290,7 @@ for _name, _kind, _model, _tier, _prompt, _vals in [
         (),
     ),
 ]:
+    _tools, _max_calls, _brief = _TOOLING.get(_name, ((), 3, ""))
     register_agent(
         AgentSpec(
             name=_name,
@@ -246,5 +299,8 @@ for _name, _kind, _model, _tier, _prompt, _vals in [
             tier=_tier,  # type: ignore[arg-type]
             system_prompt=f"{COMMON_RULES}\n\n{_prompt}",
             validators=tuple(_vals),
+            tools=_tools,
+            max_tool_calls=_max_calls,
+            research_brief=_brief,
         )
     )

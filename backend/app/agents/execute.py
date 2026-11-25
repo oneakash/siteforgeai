@@ -14,14 +14,12 @@ from app.agents.registry import AgentSpec
 from app.agents.runner import run_agent
 from app.store.artifacts import StoredArtifact, load_for_task, save_artifact
 
-
 @dataclass
 class TaskExecution:
     artifact: StoredArtifact
     skipped: bool  # True => artifact already existed; the LLM was NOT called
     attempts: int
     model: str | None = None
-
 
 async def execute_task(
     conn: AsyncConnection,
@@ -66,6 +64,7 @@ async def execute_task(
                     "version": stored.version,
                     "model": result.model,
                     "attempts": result.attempts,
+                    "searches": result.searches,
                 }
             ),
         ),

@@ -18,8 +18,8 @@ from app.agents.envelope import build_envelope
 from app.agents.errors import AgentOutputError
 from app.agents.llm import CallMeta, StructuredLLM
 from app.agents.registry import AgentSpec
+from app.agents.tool_loop import gather_research
 from app.config import LLM_TIMEOUT_S
-
 
 @dataclass
 class AgentResult:
@@ -27,7 +27,7 @@ class AgentResult:
     attempts: int
     corrections: list[str] = field(default_factory=list)  # problems fixed along the way
     model: str | None = None  # 'provider:model' that actually served the call
-
+    searches: list[str] = field(default_factory=list)  # queries issued in the research phase
 
 def format_problems(exc: Exception, limit: int = 8) -> str:
     if isinstance(exc, ValidationError):
@@ -41,7 +41,6 @@ def format_problems(exc: Exception, limit: int = 8) -> str:
         return "\n".join(lines)
     return f"- {exc}"
 
-
 def coerce(raw: Any, model: type[BaseModel]) -> BaseModel:
     if isinstance(raw, BaseModel):
         return model.model_validate(raw.model_dump())  # re-validate: never trust pre-parsed objects
@@ -53,11 +52,9 @@ def coerce(raw: Any, model: type[BaseModel]) -> BaseModel:
         return model.model_validate_json(text)
     return model.model_validate(raw)
 
-
 def build_messages(spec: AgentSpec, envelope: str, instruction: str) -> list[dict[str, str]]:
     user = f"{envelope}\n\nTask: {instruction}" if instruction else envelope
     return [{"role": "system", "content": spec.system_prompt}, {"role": "user", "content": user}]
-
 
 async def run_agent(
     spec: AgentSpec,
@@ -70,6 +67,16 @@ async def run_agent(
     max_corrections: int = 2,
     timeout_s: float = LLM_TIMEOUT_S,
 ) -> AgentResult:
+    searches: list[str] = []
+    if spec.tools:
+        # Research phase (best-effort). `web_research` joins the inputs so the envelope shows
+        # it to the model AND semantic validators can verify claims against it.
+        log = await gather_research(
+            spec, llm=llm, inputs=inputs, instruction=instruction, project_id=project_id
+        )
+        inputs = {**inputs, "web_research": (log.as_input() if log else {"status": "unavailable", "sources": []})}
+        searches = list(log.queries) if log else []
+        
     envelope = build_envelope(inputs, memories, spec.context_budget_chars)
     messages = build_messages(spec, envelope, instruction)
     problems_seen: list[str] = []
@@ -86,7 +93,11 @@ async def run_agent(
             if sem:
                 raise ValueError("\n".join(f"- {p}" for p in sem))
             return AgentResult(
-                output=out, attempts=attempt, corrections=problems_seen, model=meta.used_model
+                output=out,
+                attempts=attempt,
+                corrections=problems_seen,
+                model=meta.used_model,
+                searches=searches,
             )
         except (ValidationError, ValueError) as exc:
             problem = format_problems(exc)
