@@ -28,3 +28,7 @@ CORS_ORIGINS = [
     )
     if o.strip()
 ]
+
+# ---- Agent tools. LangSearch is free: https://langsearch.com/api-keys (env LANGSEARCH_API_KEY).
+# Without a key the research phase is skipped and agents run exactly as before.
+RESEARCH_TIMEOUT_S = float(os.environ.get("RESEARCH_TIMEOUT_S", "90"))
