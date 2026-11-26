@@ -57,6 +57,81 @@ async def _run(graph, deps: Deps, project_id: str, graph_input: Any) -> dict:
     return await status(graph, deps, project_id)
 
 
+async def pending_resume_token(graph, deps: Deps, project_id: str) -> str | None:
+    """Identifies the interrupt the workflow is waiting on (its checkpoint id), or None.
+
+    The API captures this when it enqueues a resume; the worker refuses to apply an answer to
+    a DIFFERENT interrupt (e.g. a double-clicked "approve" landing on the next review).
+    """
+    snap = await graph.aget_state(_cfg(await _thread_for(deps, project_id)))
+    if not any(t.interrupts for t in snap.tasks):
+        return None
+    return snap.config["configurable"]["checkpoint_id"]
+
+
+async def _start_input(deps: Deps, project_id: str) -> dict:
+    async with await psycopg.AsyncConnection.connect(deps.dsn) as conn:
+        row = await (
+            await conn.execute(
+                "SELECT user_id, brand_name, prompt, niche FROM projects WHERE id=%s::uuid",
+                (project_id,),
+            )
+        ).fetchone()
+    if not row:
+        raise KeyError(f"unknown project {project_id}")
+    return {
+        "project_id": project_id,
+        "user_id": row[0],
+        "brand_name": row[1],
+        "prompt": row[2],
+        "niche": row[3],
+        "brand_approved": False,
+    }
+
+
+async def run_job(
+    graph,
+    deps: Deps,
+    project_id: str,
+    *,
+    mode: str,
+    payload: dict | None = None,
+    token: str | None = None,
+) -> dict:
+    """Idempotent entry point for a queued run (safe to execute twice).
+
+    Decides what to do from the CURRENT checkpoint, not from what the message says happened:
+      * no checkpoint yet            -> start from the project row
+      * waiting on an interrupt      -> apply the resume payload (if it targets THIS interrupt)
+      * mid-run (crash / redelivery) -> continue from the last checkpoint
+      * finished, or waiting for the user -> no-op
+    """
+    thread = await _thread_for(deps, project_id)
+    snap = await graph.aget_state(_cfg(thread))
+    waiting = next((t.interrupts[0] for t in snap.tasks if t.interrupts), None)
+    started = bool(snap.values)
+
+    if mode == "resume":
+        if not started:
+            raise ValueError("cannot resume a project that has not started")
+        if waiting is not None:
+            current = snap.config["configurable"].get("checkpoint_id")
+            if token is not None and token != current:
+                logger.warning(f"⚠️  [JOB] stale resume for {project_id} dropped")
+                async with await psycopg.AsyncConnection.connect(deps.dsn, autocommit=True) as c:
+                    await audit(c, project_id, "system", "stale_resume_dropped", {})
+                return await status(graph, deps, project_id)
+            INTERRUPT_MODELS[waiting.value["type"]].model_validate(payload or {})
+            return await _run(graph, deps, project_id, Command(resume=payload))
+        # not waiting: an earlier delivery already applied it; fall through to "continue"
+
+    if not started:
+        return await _run(graph, deps, project_id, await _start_input(deps, project_id))
+    if waiting is not None or not snap.next:
+        return await status(graph, deps, project_id)  # waiting for the user, or finished
+    return await _run(graph, deps, project_id, None)
+
+
 async def start_project(
     graph, deps: Deps, *, user_id: str, brand_name: str, prompt: str, niche: str
 ) -> dict:

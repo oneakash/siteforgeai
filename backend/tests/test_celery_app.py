@@ -27,3 +27,10 @@ def test_visibility_timeout_exceeds_time_limit():
 def test_ping_task_is_registered_and_runs():
     assert "worker.ping" in celery_app.tasks
     assert ping.apply().get() == "pong"
+
+
+def test_run_project_task_is_registered_with_retry_policy():
+    from app.worker.tasks import run_project
+
+    assert "worker.run_project" in celery_app.tasks
+    assert run_project.max_retries == 12

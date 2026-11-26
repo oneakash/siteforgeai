@@ -103,3 +103,22 @@ curl localhost:8000/health/redis ; curl localhost:8000/health/worker
 - `app/worker/tasks.py` tasks (`worker.ping` now; the graph-run task lands in the next step)
 - `visibility_timeout` must stay larger than `CELERY_TIME_LIMIT_S`, or a long healthy run is re-delivered.
 
+## Step 6: runs happen in the worker, not in the request
+
+`POST /v1/projects/` now returns **202** and enqueues `worker.run_project`; the browser polls
+`GET /v1/projects/{id}/status` (Step 7 replaces polling with a live event stream).
+
+```
+make infra && make worker && (cd backend && uv run uvicorn app.main:app --reload)
+curl -s -X POST localhost:8000/v1/projects/ -H 'content-type: application/json' \
+  -d '{"brand_name":"Aurum","niche":"Travel","prompt":"Luxury travel agency"}'     # -> 202 + project_id
+curl -s localhost:8000/v1/projects/<id>/status
+# kill the worker (Ctrl+C or kill -9) mid-run, start it again: the SAME job is re-delivered and
+# continues from the last checkpoint. If it was given up on: POST /v1/projects/<id>/continue
+```
+
+- `service.run_job()` is idempotent: it decides start / resume / continue from the CURRENT checkpoint.
+- A Postgres advisory lock (`app/store/locks.py`) keeps two workers off the same project.
+- Resumes carry the checkpoint id they answer; a stale one (double click) is dropped, not applied.
+- `POST .../resume` -> 409 if nothing is pending, 422 for a bad payload (validated before queuing).
+

@@ -11,11 +11,7 @@ from app.api.memory import router as memory_router
 from app.api.models import router as models_router
 from app.api.projects import router as projects_router
 from app.config import CORS_ORIGINS, DATABASE_URL
-from app.graph.checkpointer import checkpointer_pool
-from app.graph.deps import Deps, get_llm
-from app.graph.root import build_root_graph
-from app.memory.provider import EmbedderProvider
-from app.memory.service import MemoryService
+from app.graph.runtime import graph_runtime
 from dotenv import load_dotenv
    
 load_dotenv()
@@ -33,15 +29,10 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 async def lifespan(app: FastAPI):
     logger = logging.getLogger("siteforge.main")
     logger.info("🚀 Starting SiteForge API...")
-    async with checkpointer_pool() as saver:
-        app.state.checkpointer = saver
-        app.state.memory = MemoryService(EmbedderProvider())
-        deps = Deps(
-            llm=get_llm(),
-            dsn=DATABASE_URL,
-            memory=app.state.memory,
-        )
-        app.state.graph = build_root_graph(deps=deps, checkpointer=saver)
+    async with graph_runtime() as rt:
+        app.state.checkpointer = rt.saver
+        app.state.memory = rt.memory
+        app.state.graph = rt.graph
         logger.info("✅ LangGraph compiled and ready.")
         yield
     logger.info("🛑 Shutting down SiteForge API...")

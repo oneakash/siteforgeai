@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -17,83 +17,57 @@ export default function Home() {
   const [prompt, setPrompt] = useState("");
   const [feedback, setFeedback] = useState("");
 
-  const processSSEEvent = (data: any) => {
-    // ... (Keep your existing logic exactly as is)
-    console.log("🔄 Processing SSE event:", data.type, data);
-    
-    if (data.type === "status") {
-      const s = data.payload;
-      setPhase(s.phase);
-      setTasks(s.tasks || []);
-      if (s.waiting_for) setWaitingFor(s.waiting_for);
-      if (s.phase === "published") setSiteVersion(s.site_version || 1);
-    } else if (data.type === "interrupt") {
-      setWaitingFor(data.payload);
-      setPhase("waiting_for_approval");
-    } else if (data.type === "node") {
-      if (data.update?.phase) setPhase(data.update.phase);
-      if (data.update?.plan?.tasks) setTasks(data.update.plan.tasks);
-    } else if (data.type === "error") {
-      console.error("Stream error:", data.message);
-    }
-  };
+  // The backend now runs the workflow in a Celery worker. POST returns 202 immediately and we
+  // poll /status. (Step 3 replaces polling with a live SSE event stream.)
+  useEffect(() => {
+    if (!projectId) return;
+    let stopped = false;
+    const tick = async () => {
+      try {
+        const res = await fetch(`${API_URL}/v1/projects/${projectId}/status`);
+        if (!res.ok || stopped) return;
+        const s = await res.json();
+        setPhase(s.phase);
+        setTasks(s.tasks || []);
+        setWaitingFor(s.waiting_for ?? null);
+        if (s.phase === "published") setSiteVersion(s.site_version || 1);
+      } catch (e) {
+        console.error("status poll failed", e);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => {
+      stopped = true;
+      clearInterval(id);
+    };
+  }, [projectId]);
 
-  const handleStream = async (url: string, body?: any) => {
-    // ... (Keep your existing logic exactly as is)
-    setStreaming(true);
-    setWaitingFor(null);
-    
+  const post = async (url: string, body?: any) => {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
     });
-    
     if (!res.ok) {
-      console.error("Failed to start/resume project", await res.text());
-      setStreaming(false);
-      return;
+      console.error("Request failed", res.status, await res.text());
+      return null;
     }
-    
-    const reader = res.body?.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    
-    if (reader) {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.type === "init" && data.project_id) {
-                setProjectId(data.project_id);
-              } else {
-                processSSEEvent(data);
-              }
-            } catch (e) {
-              console.error("Failed to parse SSE event:", e, line);
-            }
-          }
-        }
-      }
-    }
+    return res.json();
+  };
+
+  const handleStart = async () => {
+    setStreaming(true);
+    const out = await post(`${API_URL}/v1/projects/`, { brand_name: brandName, niche, prompt });
     setStreaming(false);
+    if (out?.project_id) setProjectId(out.project_id);
   };
 
-  const handleStart = () => {
-    handleStream(`${API_URL}/v1/projects/`, { brand_name: brandName, niche, prompt });
-  };
-
-  const handleResume = (action: string, fb?: string) => {
+  const handleResume = async (action: string, fb?: string) => {
     const payload = action === "approve" ? { action: "approve" } : { action: "revise", feedback: fb };
-    handleStream(`${API_URL}/v1/projects/${projectId}/resume`, payload);
+    setWaitingFor(null); // hide the card; the next poll shows the real state
+    setPhase("queued");
+    await post(`${API_URL}/v1/projects/${projectId}/resume`, payload);
   };
 
   // --- PHASE 1: Onboarding ---
