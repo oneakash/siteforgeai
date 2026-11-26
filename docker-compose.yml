@@ -20,8 +20,11 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-siteforge}:${POSTGRES_PASSWORD:-siteforge}@db:5432/${POSTGRES_DB:-siteforge}
+      REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "8000:8000"
@@ -52,6 +55,9 @@ services:
 
   redis:
     image: redis:7-alpine
+    # AOF = queued jobs survive a Redis restart; noeviction = Redis refuses writes instead of
+    # silently dropping queued tasks when memory is full (Celery broker requirement).
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     ports:
       - "6379:6379"
     volumes:
@@ -62,13 +68,13 @@ services:
       timeout: 3s
       retries: 5
 
-  arq_worker:
+  worker:
     build: ./backend
-    command: uv run arq app.worker.WorkerSettings
+    command: celery -A app.worker.celery_app worker --loglevel=INFO --concurrency=2 -Q siteforge
     env_file: .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-siteforge}:${POSTGRES_PASSWORD:-siteforge}@db:5432/${POSTGRES_DB:-siteforge}
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
         condition: service_healthy

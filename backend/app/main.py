@@ -6,6 +6,7 @@ import psycopg
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.health import router as health_router
 from app.api.memory import router as memory_router
 from app.api.models import router as models_router
 from app.api.projects import router as projects_router
@@ -57,6 +58,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(health_router)
 app.include_router(projects_router)
 app.include_router(models_router)
 app.include_router(memory_router)

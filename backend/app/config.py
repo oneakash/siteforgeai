@@ -32,3 +32,17 @@ CORS_ORIGINS = [
 # ---- Agent tools. LangSearch is free: https://langsearch.com/api-keys (env LANGSEARCH_API_KEY).
 # Without a key the research phase is skipped and agents run exactly as before.
 RESEARCH_TIMEOUT_S = float(os.environ.get("RESEARCH_TIMEOUT_S", "90"))
+
+# ---- Redis / Celery (task queue). Postgres stays the source of truth for workflow state;
+# Redis is only the broker (and, later, the live-progress pub/sub channel).
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", REDIS_URL)
+# Only used by the `ping` smoke task; real tasks ignore results (state lives in Postgres).
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", REDIS_URL)
+CELERY_QUEUE = os.environ.get("CELERY_QUEUE", "siteforge")
+# A whole graph run (several LLM calls, retries) must finish inside these limits.
+CELERY_SOFT_TIME_LIMIT_S = int(os.environ.get("CELERY_SOFT_TIME_LIMIT_S", "1800"))
+CELERY_TIME_LIMIT_S = int(os.environ.get("CELERY_TIME_LIMIT_S", "2100"))
+# Redis re-delivers an un-acked task after this long. It MUST exceed CELERY_TIME_LIMIT_S,
+# otherwise a slow-but-healthy run gets delivered to a second worker.
+CELERY_VISIBILITY_TIMEOUT_S = int(os.environ.get("CELERY_VISIBILITY_TIMEOUT_S", "3600"))

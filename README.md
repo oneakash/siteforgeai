@@ -84,3 +84,22 @@ Embedding switch: old vectors are ignored by search until `reembed_stale()` rebu
 - **Embedding model is system-wide.** After switching it: `POST /v1/memories/reembed`.
 - **Never blocks the workflow.** If embeddings are down, text is stored, pinned recall still works, `reembed` repairs later.
 - Inspect: `GET /v1/projects/{id}/memories?history=true`, `GET /v1/projects/{id}/memories/search?q=...`
+
+## Step 5: task queue (Celery + Redis)
+
+Workflow state stays in Postgres (LangGraph checkpointer + task ledger). Redis is only the broker.
+Tasks use `acks_late` + `reject_on_worker_lost`, so a killed worker's job is re-delivered and
+resumes from the last checkpoint.
+
+```
+uv lock                      # in backend/: refresh uv.lock after the arq -> celery change
+make infra                   # db + redis in Docker
+make worker                  # Celery worker (Windows: make worker POOL=solo)
+make ping-worker             # PASS = API -> Redis -> worker -> Redis round trip works
+curl localhost:8000/health/redis ; curl localhost:8000/health/worker
+```
+
+- `app/worker/celery_app.py` Celery config (JSON only, results ignored, time limits, visibility timeout)
+- `app/worker/tasks.py` tasks (`worker.ping` now; the graph-run task lands in the next step)
+- `visibility_timeout` must stay larger than `CELERY_TIME_LIMIT_S`, or a long healthy run is re-delivered.
+
