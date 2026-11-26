@@ -77,6 +77,8 @@ async def build_inputs(
             }
 
         inputs["slug"] = slug
+        # Pages that will exist: CTAs may only link to these (validated in page_is_renderable).
+        inputs["available_pages"] = sorted(PAGE_SLUG_BY_TASK.values())
         inputs["title"] = inputs["page_spec"]["title"]
 
     if agent == "brand_guideline" and revision:

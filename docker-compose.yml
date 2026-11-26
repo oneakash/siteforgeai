@@ -46,7 +46,9 @@ services:
       - /app/.next
 
   renderer:
-    build: ./renderer
+    build:
+      context: ./renderer
+      target: dev   # bind-mounted source; rebuilds the Tailwind CSS on start (default target = prod image)
     ports:
       - "4000:4000"
     volumes:

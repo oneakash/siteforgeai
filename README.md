@@ -12,9 +12,11 @@ docker compose up --build -d db redis arq_worker
 cd backend
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-# Run the renderer
+# Run the renderer (first run: npm install; builds public/tailwind.css, then serves on :4000)
 cd renderer
-BACKEND_URL=http://localhost:8000 node server.js
+npm install
+BACKEND_URL=http://localhost:8000 npm run dev      # or: make renderer
+# editing renderer/lib/*.js classes? run `npm run dev:css` in a 2nd terminal to rebuild the CSS
 
 # Run frontend
 cd frontend
@@ -139,3 +141,27 @@ curl -N 'localhost:8000/v1/projects/<id>/events?after=10'      # replay everythi
 - Events come from `set_phase` (real transitions only), task start/finish, and a short allow-list of
   audit actions (`LOGGED_ACTIONS` in `app/store/tasks.py`). `emit()` never raises.
 
+
+## Step 8: Tailwind sections + output validator
+
+```
+cd renderer && npm install && npm test        # 18 tests; no network or backend needed
+cd backend && pytest tests/test_section_rules.py
+```
+
+- **Sections stay typed JSON** (agents never emit HTML or class names). The renderer turns each section into its own
+  Tailwind HTML (`renderer/lib/sections.js`); every `<section>` carries `data-section-id`, `data-section-type` and
+  `data-section-hash`, which the section editor builds on.
+- **One stylesheet for every project.** `npm run build:css` compiles Tailwind once (`renderer/styles/input.css`).
+  Brand tokens are emitted per request as `--site-*` CSS variables and mapped to `bg-primary`, `text-ink`,
+  `font-heading`, `rounded-site`, ... Text on brand colours is picked for contrast (white vs. dark).
+- **Classes must be whole literals** in `renderer/lib/` (the build scans it). `test/classes.test.js` fails if any emitted class
+  is not a real Tailwind utility (Tailwind ignores typos silently).
+- **Validator** `backend/app/contracts/section_rules.py` runs on every generated page (registered on the
+  `website_generation` agent), so violations trigger the existing corrective re-prompt before anything is saved:
+  requested slug, `section_id` prefixed with the page (`home-hero`; keeps ids unique across parallel pages), hero first on `/`,
+  per-type item shapes, plain text only (no HTML), length caps, CTA links (`https://` or an existing page), form field
+  types, readable image placeholders. The same table generates the prompt's content-shape list, so they cannot drift.
+- Strict on the way in, tolerant on the way out: stored documents are not re-validated and the renderer still accepts
+  the older item shapes. Unknown internal CTA links fall back to `/contact`.
+- Previews are served with a CSP (no scripts, `frame-ancestors` = `FRONTEND_ORIGIN`, default `http://localhost:3000`) and `GET /healthz`.

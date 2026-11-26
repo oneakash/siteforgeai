@@ -22,6 +22,7 @@ from app.contracts import (
 )
 from app.contracts.memory import MemorySummary
 from app.contracts.plan import AgentName, ancestors_of
+from app.contracts.section_rules import describe_content_rules, validate_page
 from app.contracts.site import DesignTokens, Page
 from app.tools.web_search import host_of
 
@@ -101,6 +102,16 @@ def competitors_are_grounded(out: CompetitorReport, inputs: Mapping[str, Any]) -
                 "evidence='model_knowledge'"
             )
     return problems
+
+def page_is_renderable(out: Page, inputs: Mapping[str, Any]) -> list[str]:
+    """The generated page must be the requested page and every section must follow the content
+    rules the renderer is built for (shapes, limits, plain text, safe links, ids)."""
+    pages = inputs.get("available_pages")
+    return validate_page(
+        out,
+        expected_slug=inputs.get("slug") if isinstance(inputs.get("slug"), str) else None,
+        available_pages=pages if isinstance(pages, list) else None,
+    )
 
 RESEARCH_AGENTS = {AgentName.NICHE, AgentName.AUDIENCE, AgentName.COMPETITOR, AgentName.SEO}
 
@@ -185,15 +196,20 @@ _P = {
         "imagery, following the brand imagery guidelines."
     ),
     "website": (
-        "Role: Website Generation Agent. You are generating a single Page of the Site Document. "
-        "You will be given a specific page slug, the approved Brand Guideline, and the Research Digest. "
-        "CRITICAL RULE: The 'sections' field in your output MUST be a JSON array (list) of section objects. "
-        "Never output a string, null, or a single object for 'sections'. It must be formatted as: \"sections\": [{...}, {...}] "
-        "1. Create 2-4 section objects inside the 'sections' list, appropriate for this page type (e.g., 'hero', 'features', 'testimonials'). "
-        "2. Write on-brand copy following the tone of voice and SEO keywords. "
-        "3. For visual sections, YOU MUST populate the 'image_placeholder' object with 'bg_hex', 'text_hex', and 'label'. "
-        "4. Ensure 'section_id' values are unique kebab-case strings (e.g., 'home.hero', 'about.team'). "
-        "5. Emit typed JSON only, never raw HTML."
+        "Role: Website Generation Agent. You generate ONE page of the Site Document: the page whose slug is "
+        "in <artifact name=\"slug\">. Output slug, title, meta and sections. "
+        "'sections' MUST be a JSON array of 2-6 section objects (never a string, null or single object). "
+        "Rules: "
+        "1. Typed JSON only. Never HTML, markdown or tags: every string is plain text. "
+        "2. section_id is lowercase kebab-case, unique, and starts with the page prefix: '/' -> 'home', "
+        "'/about' -> 'about', '/services/web' -> 'services-web' (e.g. 'home-hero', 'about-team'). "
+        "3. The homepage ('/') must start with a hero section; no page has more than one hero. "
+        "4. Use ONLY these content shapes (a trailing ? means optional):\n"
+        f"{describe_content_rules()}\n"
+        "5. CTA href is a page from <artifact name=\"available_pages\"> (e.g. '/contact') or a full https:// URL. "
+        "6. image_placeholder is {width, height, bg_hex, text_hex, label}; hex values have NO '#', and text_hex "
+        "must contrast with bg_hex. Set it for hero and gallery sections. "
+        "7. Write on-brand copy following the tone of voice and SEO keywords; be concrete, no filler."
     ),
     "qa": (
         "Role: QA Agent. Check consistency (brand, nav, SEO, completeness) of the provided site. "
@@ -277,7 +293,14 @@ for _name, _kind, _model, _tier, _prompt, _vals in [
     ),
     ("design", "design_tokens", DesignTokens, "fast", _P["design"], (design_matches_brand,)),
     ("image", "image_plan", ImagePlan, "fast", _P["image"], ()),
-    ("website_generation", "page", Page, "reasoning", _P["website"], ()),
+    (
+        "website_generation",
+        "page",
+        Page,
+        "reasoning",
+        _P["website"],
+        (page_is_renderable,),
+    ),
     ("qa", "qa_report", QAReport, "fast", _P["qa"], ()),
     ("manager.triage_edit", "triage_result", TriageResult, "fast", _P["triage"], ()),
     ("memory.summarize", "memory_summary", MemorySummary, "fast", _P["memory"], ()),

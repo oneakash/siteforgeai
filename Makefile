@@ -16,3 +16,7 @@ ping-worker:  ## Step 1 checkpoint: round-trip a task through Redis and the work
 	cd backend && uv run python -m scripts.ping_worker
 migrate-local:  ## apply Alembic migrations to the local Postgres (make infra first)
 	cd backend && uv run alembic upgrade head
+renderer:  ## local renderer: installs deps, builds Tailwind CSS, runs with auto-reload (needs Node 20+)
+	cd renderer && npm install && npm run dev
+renderer-test:  ## renderer unit tests (escaping, links, Tailwind class validity, CSP)
+	cd renderer && npm test

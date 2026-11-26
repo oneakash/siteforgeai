@@ -1,0 +1,26 @@
+/* Tailwind entry point. Compiled by `npm run build:css` into public/tailwind.css.
+ *
+ * `source(none)` + @source: scan ONLY lib/ (where every class lives) instead of guessing.
+ * The brand tokens arrive per request as CSS variables (--site-*, see lib/page.js); this
+ * @theme block turns them into utilities such as bg-primary, text-ink, font-heading and
+ * rounded-site. `inline` makes the utilities reference the variable directly, so one
+ * stylesheet serves every project's palette. */
+@import "tailwindcss" source(none);
+@source "../lib";
+
+@theme inline {
+  --color-primary: var(--site-primary);
+  --color-secondary: var(--site-secondary);
+  --color-accent: var(--site-accent);
+  --color-canvas: var(--site-bg);
+  --color-surface: var(--site-surface);
+  --color-ink: var(--site-text);
+  --color-on-primary: var(--site-on-primary);
+  --color-on-accent: var(--site-on-accent);
+
+  --font-heading: var(--site-font-heading), ui-serif, Georgia, serif;
+  --font-body: var(--site-font-body), ui-sans-serif, system-ui, sans-serif;
+
+  --radius-site: var(--site-radius);
+  --radius-btn: var(--site-radius-btn);
+}

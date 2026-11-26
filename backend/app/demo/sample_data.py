@@ -177,7 +177,10 @@ def site():
                 {
                     "slug": "/",
                     "title": "Home",
-                    "meta": {"title": "Aurum Escapes", "description": "Luxury travel"},
+                    "meta": {
+                        "title": "Aurum Escapes",
+                        "description": "Luxury private travel, designed around you.",
+                    },
                     "sections": [
                         sec(
                             "home-hero",
@@ -194,7 +197,10 @@ def site():
                 {
                     "slug": "/contact",
                     "title": "Contact",
-                    "meta": {"title": "Contact", "description": "Get in touch"},
+                    "meta": {
+                        "title": "Contact us",
+                        "description": "Get in touch and we will design your journey.",
+                    },
                     "sections": [
                         sec(
                             "contact-form",
@@ -207,6 +213,95 @@ def site():
             ],
         }
     )
+
+
+def page(slug: str = "/"):
+    """A generated Page that satisfies the section rules (contracts/section_rules.py)."""
+    ph = {"width": 1200, "height": 600, "bg_hex": "1d3557", "text_hex": "f1faee"}
+
+    def sec(i, typ, image=None, **c):
+        out = {"section_id": i, "type": typ, "content": c}
+        if image:
+            out["image_placeholder"] = {**ph, "label": image}
+        return out
+
+    pages = {
+        "/": {
+            "title": "Home",
+            "meta": {
+                "title": "Aurum Escapes | Luxury Travel",
+                "description": "Tailor-made luxury journeys, planned end to end by travel designers.",
+            },
+            "sections": [
+                sec(
+                    "home-hero",
+                    "hero",
+                    image="Hero",
+                    heading="Travel, tailored.",
+                    subheading="Private journeys designed around you.",
+                    primary_cta={"label": "Plan my trip", "href": "/contact"},
+                ),
+                sec(
+                    "home-features",
+                    "features",
+                    heading="Why Aurum",
+                    items=[
+                        {"title": "Private", "description": "Never a group tour."},
+                        {"title": "Local", "description": "Guides who live there."},
+                        {"title": "Seamless", "description": "One point of contact."},
+                    ],
+                ),
+                sec(
+                    "home-faq",
+                    "faq",
+                    heading="Questions",
+                    items=[
+                        {"question": f"Question {n}?", "answer": f"Answer {n}."} for n in range(3)
+                    ],
+                ),
+            ],
+        },
+        "/about": {
+            "title": "About",
+            "meta": {
+                "title": "About Aurum Escapes",
+                "description": "Meet the travel designers behind Aurum Escapes and how we work.",
+            },
+            "sections": [
+                sec("about-story", "about", heading="Our story", body="Founded by travellers."),
+                sec(
+                    "about-team",
+                    "team",
+                    heading="The team",
+                    items=[
+                        {"title": "Ava", "description": "Founder"},
+                        {"title": "Noor", "description": "Designer"},
+                    ],
+                ),
+            ],
+        },
+        "/contact": {
+            "title": "Contact",
+            "meta": {
+                "title": "Contact Aurum Escapes",
+                "description": "Tell us where you want to go and we will design the journey.",
+            },
+            "sections": [
+                sec(
+                    "contact-form",
+                    "contact_form",
+                    heading="Talk to us",
+                    fields=[
+                        {"label": "Name"},
+                        {"label": "Email", "type": "email", "required": True},
+                        {"label": "Message", "type": "textarea"},
+                    ],
+                ),
+                sec("contact-map", "map_location", heading="Visit", address="1 Gold Street"),
+            ],
+        },
+    }
+    return copy.deepcopy({"slug": slug, **pages[slug]})
 
 
 # ---------- research + triage samples (used by DemoLLM and tests) ----------
