@@ -122,3 +122,20 @@ curl -s localhost:8000/v1/projects/<id>/status
 - Resumes carry the checkpoint id they answer; a stale one (double click) is dropped, not applied.
 - `POST .../resume` -> 409 if nothing is pending, 422 for a bad payload (validated before queuing).
 
+## Step 7: live progress events
+
+Workers record every stage change in `run_events` (migration 0004); `GET /v1/projects/{id}/events`
+streams them as Server-Sent Events. The UI shows a "Live Activity" feed.
+
+```
+make migrate-local                      # applies 0004 (new table: run_events)
+curl -N localhost:8000/v1/projects/<id>/events                 # watch a run live
+curl -N 'localhost:8000/v1/projects/<id>/events?after=10'      # replay everything after event 10
+```
+
+- Postgres rows are the data; Redis pub/sub only wakes the stream. Redis down => the stream polls (2 s).
+- Every event has an increasing `id`; browsers resend it as `Last-Event-ID` on reconnect, so a refresh
+  or dropped connection replays exactly what was missed.
+- Events come from `set_phase` (real transitions only), task start/finish, and a short allow-list of
+  audit actions (`LOGGED_ACTIONS` in `app/store/tasks.py`). `emit()` never raises.
+

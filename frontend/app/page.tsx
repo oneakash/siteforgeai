@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useProjectEvents } from "./useProjectEvents";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -17,31 +18,35 @@ export default function Home() {
   const [prompt, setPrompt] = useState("");
   const [feedback, setFeedback] = useState("");
 
-  // The backend now runs the workflow in a Celery worker. POST returns 202 immediately and we
-  // poll /status. (Step 3 replaces polling with a live SSE event stream.)
-  useEffect(() => {
+  // The workflow runs in a Celery worker. Progress arrives as a live SSE stream; /status is the
+  // source for the task list and the pending question, refreshed whenever an event arrives.
+  const refreshStatus = useCallback(async () => {
     if (!projectId) return;
-    let stopped = false;
-    const tick = async () => {
-      try {
-        const res = await fetch(`${API_URL}/v1/projects/${projectId}/status`);
-        if (!res.ok || stopped) return;
-        const s = await res.json();
-        setPhase(s.phase);
-        setTasks(s.tasks || []);
-        setWaitingFor(s.waiting_for ?? null);
-        if (s.phase === "published") setSiteVersion(s.site_version || 1);
-      } catch (e) {
-        console.error("status poll failed", e);
-      }
-    };
-    tick();
-    const id = setInterval(tick, 2000);
-    return () => {
-      stopped = true;
-      clearInterval(id);
-    };
+    try {
+      const res = await fetch(`${API_URL}/v1/projects/${projectId}/status`);
+      if (!res.ok) return;
+      const s = await res.json();
+      setPhase(s.phase);
+      setTasks(s.tasks || []);
+      setWaitingFor(s.waiting_for ?? null);
+      if (s.phase === "published") setSiteVersion(s.site_version || 1);
+    } catch (e) {
+      console.error("status refresh failed", e);
+    }
   }, [projectId]);
+
+  const { events, connected } = useProjectEvents(API_URL, projectId, refreshStatus);
+
+  useEffect(() => {
+    refreshStatus();
+  }, [refreshStatus]);
+
+  // Safety net: if the stream is down, fall back to slow polling until it reconnects.
+  useEffect(() => {
+    if (!projectId || connected) return;
+    const id = setInterval(refreshStatus, 5000);
+    return () => clearInterval(id);
+  }, [projectId, connected, refreshStatus]);
 
   const post = async (url: string, body?: any) => {
     const res = await fetch(url, {
@@ -194,6 +199,33 @@ export default function Home() {
                 </li>
               ))}
               {tasks.length === 0 && <li className="text-slate-400 text-sm italic">Waiting for plan...</li>}
+            </ul>
+          </div>
+
+          {/* Live Activity Card */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
+              Live Activity
+              <span className={`ml-auto flex items-center gap-1.5 text-xs font-semibold ${connected ? "text-green-600" : "text-amber-600"}`}>
+                <span className={`w-2 h-2 rounded-full ${connected ? "bg-green-500 animate-pulse" : "bg-amber-500"}`}></span>
+                {connected ? "Live" : "Reconnecting"}
+              </span>
+            </h3>
+            <ul className="space-y-2.5 max-h-72 overflow-y-auto">
+              {[...events].reverse().slice(0, 50).map((e) => (
+                <li key={e.id} className="flex items-start gap-2 text-sm">
+                  <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${
+                    e.status === "failed" ? "bg-red-500" :
+                    e.status === "completed" || e.stage === "published" ? "bg-green-500" :
+                    e.type === "phase" ? "bg-indigo-500" : "bg-slate-400"
+                  }`}></span>
+                  <div className="flex-1">
+                    <div className="text-slate-700 dark:text-slate-300">{e.message}</div>
+                    <div className="text-[11px] text-slate-400">{new Date(e.ts).toLocaleTimeString()}</div>
+                  </div>
+                </li>
+              ))}
+              {events.length === 0 && <li className="text-slate-400 text-sm italic">Waiting for the first update...</li>}
             </ul>
           </div>
 
